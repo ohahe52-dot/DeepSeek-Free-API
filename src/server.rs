@@ -97,6 +97,8 @@ fn build_router(state: AppState, cors_origins: Vec<String>) -> Router {
         .route("/v1/chat/completions", post(handlers::chat_completions))
         .route("/v1/models", get(handlers::list_models))
         .route("/v1/models/{id}", get(handlers::get_model))
+        .route("/models", get(handlers::list_models))
+        .route("/models/{id}", get(handlers::get_model))
         // Anthropic
         .route("/anthropic/v1/messages", post(handlers::anthropic_messages))
         .route("/anthropic/v1/models", get(handlers::anthropic_list_models))

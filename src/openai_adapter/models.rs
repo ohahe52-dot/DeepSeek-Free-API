@@ -5,7 +5,8 @@
 use crate::openai_adapter::types::{OpenAIModel, OpenAIModelList};
 
 const MODEL_CREATED: u64 = 1_090_108_800;
-const MODEL_OWNED_BY: &str = "deepseek-web (proxied by https://github.com/NIyueeE)";
+const MODEL_OWNED_BY: &str =
+    "deepseek-web (proxied by https://github.com/ohahe52-dot/ds2apimod-vn)";
 
 /// Tạo danh sách model theo model_types + aliases
 pub fn list(

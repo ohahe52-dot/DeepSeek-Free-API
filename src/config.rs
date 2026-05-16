@@ -114,7 +114,7 @@ pub struct DeepSeekConfig {
     pub tool_call: ToolCallTagConfig,
     /// Alias model: khớp index với model_types, có thể có nhiều alias ngăn bằng dấu phẩy
     /// Ví dụ model_types = ["default", "expert"], model_aliases = ["deepseek-v4-flash, deepseek-v4-flash-nothinking", "deepseek-v4-pro"]
-    #[serde(default)]
+    #[serde(default = "default_model_aliases")]
     pub model_aliases: Vec<String>,
 }
 
@@ -172,7 +172,7 @@ impl Default for DeepSeekConfig {
             max_output_tokens: default_max_output_tokens(),
             input_character_limits: default_input_character_limits(),
             tool_call: ToolCallTagConfig::default(),
-            model_aliases: Vec::new(),
+            model_aliases: default_model_aliases(),
         }
     }
 }
@@ -195,6 +195,14 @@ fn default_max_output_tokens() -> Vec<u32> {
 
 fn default_input_character_limits() -> Vec<u32> {
     vec![2_621_440, 163_840, 2_621_440]
+}
+
+fn default_model_aliases() -> Vec<String> {
+    vec![
+        "deepseek-v4-flash, deepseek-v4-flash-nothinking, deepseek-v4-flash-search, deepseek-v4-flash-search-nothinking".to_string(),
+        "deepseek-v4-pro, deepseek-v4-pro-nothinking, deepseek-v4-pro-search, deepseek-v4-pro-search-nothinking".to_string(),
+        "deepseek-v4-vision, deepseek-v4-vision-nothinking".to_string(),
+    ]
 }
 
 impl DeepSeekConfig {
