@@ -19,8 +19,7 @@ pub(crate) struct ModelResolution {
 /// thinking_enabled bật khi reasoning_effort khác "none".
 /// Model id kết thúc bằng `-nothinking` luôn tắt thinking.
 /// Nếu reasoning_effort không được truyền và model không có `-nothinking`, mặc định xử lý như "high".
-/// search_enabled bật mặc định (backend DeepSeek inject system prompt mạnh hơn khi ở chế độ search).
-/// Có thể override bằng web_search_options tường minh.
+/// search_enabled chỉ bật khi model id có hậu tố `-search` hoặc request có web_search_options.
 pub(crate) fn resolve(
     registry: &HashMap<String, String>,
     model_id: &str,
@@ -29,17 +28,20 @@ pub(crate) fn resolve(
 ) -> Result<ModelResolution, String> {
     let key = model_id.to_lowercase();
     let nothinking = key.ends_with("-nothinking");
-    let base_key = key.strip_suffix("-nothinking");
+    let without_nothinking = key.strip_suffix("-nothinking").unwrap_or(&key);
+    let search = without_nothinking.ends_with("-search");
+    let without_search = without_nothinking.strip_suffix("-search");
     let model_type = registry
         .get(&key)
-        .or_else(|| base_key.and_then(|base| registry.get(base)))
+        .or_else(|| registry.get(without_nothinking))
+        .or_else(|| without_search.and_then(|base| registry.get(base)))
         .cloned()
         .ok_or_else(|| format!("Mô hình không được hỗ trợ: {}", model_id))?;
 
     let reasoning_effort = reasoning_effort.unwrap_or("high");
     let thinking_enabled = !nothinking && reasoning_effort != "none";
 
-    let search_enabled = web_search_options.map(|_| true).unwrap_or(true);
+    let search_enabled = search || web_search_options.is_some();
 
     Ok(ModelResolution {
         model_type,
@@ -79,5 +81,39 @@ mod tests {
 
         assert_eq!(res.model_type, "default");
         assert!(!res.thinking_enabled);
+    }
+
+    #[test]
+    fn search_suffix_enables_search() {
+        let res = resolve(
+            &registry(),
+            "deepseek-v4-flash-search-nothinking",
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(res.model_type, "default");
+        assert!(res.search_enabled);
+        assert!(!res.thinking_enabled);
+    }
+
+    #[test]
+    fn base_model_keeps_search_disabled() {
+        let res = resolve(&registry(), "deepseek-v4-flash", None, None).unwrap();
+
+        assert_eq!(res.model_type, "default");
+        assert!(!res.search_enabled);
+    }
+
+    #[test]
+    fn web_search_options_enable_search() {
+        let options = WebSearchOptions {
+            search_context_size: Some("high".to_string()),
+            user_location: None,
+        };
+        let res = resolve(&registry(), "deepseek-v4-flash", None, Some(&options)).unwrap();
+
+        assert!(res.search_enabled);
     }
 }

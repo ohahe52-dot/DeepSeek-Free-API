@@ -252,9 +252,19 @@ mod tests {
     }
 
     #[test]
-    fn search_enabled_by_default() {
+    fn search_disabled_by_default() {
         let body = serde_json::json!({
             "model": "deepseek-default",
+            "messages": [{ "role": "user", "content": "hi" }]
+        });
+        let req = parse_json(body).unwrap();
+        assert!(!req.search_enabled);
+    }
+
+    #[test]
+    fn search_suffix_enables_search() {
+        let body = serde_json::json!({
+            "model": "deepseek-default-search",
             "messages": [{ "role": "user", "content": "hi" }]
         });
         let req = parse_json(body).unwrap();
