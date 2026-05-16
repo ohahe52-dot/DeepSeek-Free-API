@@ -2,6 +2,9 @@
 //!
 //! Tạo tĩnh response OpenAI /models dựa trên DeepSeek model_types + model_aliases.
 
+use std::collections::HashSet;
+
+use crate::config::builtin_model_aliases;
 use crate::openai_adapter::types::{OpenAIModel, OpenAIModelList};
 
 const MODEL_CREATED: u64 = 1_090_108_800;
@@ -15,15 +18,24 @@ pub fn list(
     max_output_tokens: &[u32],
     aliases: &[String],
 ) -> OpenAIModelList {
-    let mut data: Vec<OpenAIModel> = model_types
-        .iter()
-        .enumerate()
-        .map(|(idx, ty)| {
-            let input = max_input_tokens.get(idx).copied();
-            let output = max_output_tokens.get(idx).copied();
-            make_model(&format!("deepseek-{}", ty), input, output)
-        })
-        .collect();
+    let mut seen = HashSet::new();
+    let mut data: Vec<OpenAIModel> = Vec::new();
+
+    for (idx, ty) in model_types.iter().enumerate() {
+        let input = max_input_tokens.get(idx).copied();
+        let output = max_output_tokens.get(idx).copied();
+        push_model(
+            &mut data,
+            &mut seen,
+            &format!("deepseek-{}", ty),
+            input,
+            output,
+        );
+
+        for alias in builtin_model_aliases(ty) {
+            push_model(&mut data, &mut seen, alias, input, output);
+        }
+    }
 
     // Thêm model alias (khớp index với model_types, hỗ trợ nhiều alias ngăn bằng dấu phẩy)
     for (i, alias) in aliases.iter().enumerate() {
@@ -31,7 +43,7 @@ pub fn list(
             let input = max_input_tokens.get(i).copied();
             let output = max_output_tokens.get(i).copied();
             for alias in split_model_aliases(alias) {
-                data.push(make_model(alias, input, output));
+                push_model(&mut data, &mut seen, alias, input, output);
             }
         }
     }
@@ -63,6 +75,17 @@ pub fn get(
         return Some(make_model(&format!("deepseek-{}", ty), input, output));
     }
 
+    for (idx, ty) in model_types.iter().enumerate() {
+        if builtin_model_aliases(ty)
+            .iter()
+            .any(|alias| alias.to_lowercase() == target)
+        {
+            let input = max_input_tokens.get(idx).copied();
+            let output = max_output_tokens.get(idx).copied();
+            return Some(make_model(id, input, output));
+        }
+    }
+
     // Sau đó tìm trong aliases (khớp index với model_types, hỗ trợ nhiều alias ngăn bằng dấu phẩy)
     for (i, alias) in aliases.iter().enumerate() {
         if let Some(_ty) = model_types.get(i) {
@@ -81,6 +104,18 @@ pub fn get(
 
 fn split_model_aliases(alias: &str) -> impl Iterator<Item = &str> {
     alias.split(',').map(str::trim).filter(|a| !a.is_empty())
+}
+
+fn push_model(
+    data: &mut Vec<OpenAIModel>,
+    seen: &mut HashSet<String>,
+    id: &str,
+    input: Option<u32>,
+    output: Option<u32>,
+) {
+    if seen.insert(id.to_lowercase()) {
+        data.push(make_model(id, input, output));
+    }
 }
 
 fn make_model(id: &str, input: Option<u32>, output: Option<u32>) -> OpenAIModel {

@@ -205,6 +205,25 @@ fn default_model_aliases() -> Vec<String> {
     ]
 }
 
+pub(crate) fn builtin_model_aliases(model_type: &str) -> &'static [&'static str] {
+    match model_type {
+        "default" => &[
+            "deepseek-v4-flash",
+            "deepseek-v4-flash-nothinking",
+            "deepseek-v4-flash-search",
+            "deepseek-v4-flash-search-nothinking",
+        ],
+        "expert" => &[
+            "deepseek-v4-pro",
+            "deepseek-v4-pro-nothinking",
+            "deepseek-v4-pro-search",
+            "deepseek-v4-pro-search-nothinking",
+        ],
+        "vision" => &["deepseek-v4-vision", "deepseek-v4-vision-nothinking"],
+        _ => &[],
+    }
+}
+
 impl DeepSeekConfig {
     /// Tạo map registry model OpenAI
     #[must_use]
@@ -212,6 +231,9 @@ impl DeepSeekConfig {
         let mut map = std::collections::HashMap::new();
         for (i, ty) in self.model_types.iter().enumerate() {
             map.insert(format!("deepseek-{}", ty).to_lowercase(), ty.clone());
+            for alias in builtin_model_aliases(ty) {
+                map.insert((*alias).to_string(), ty.clone());
+            }
             if let Some(alias) = self.model_aliases.get(i) {
                 for alias in split_model_aliases(alias) {
                     map.insert(alias.to_lowercase(), ty.clone());

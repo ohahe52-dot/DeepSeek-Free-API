@@ -87,6 +87,10 @@ fn build_router(state: AppState, cors_origins: Vec<String>) -> Router {
     let public = Router::new()
         .route("/", get(root))
         .route("/health", get(health))
+        .route("/models", get(handlers::list_models))
+        .route("/models/{id}", get(handlers::get_model))
+        .route("/v1/models", get(handlers::list_models))
+        .route("/v1/models/{id}", get(handlers::get_model))
         // Admin auth (no JWT required)
         .route("/admin/api/setup", post(admin::admin_setup))
         .route("/admin/api/login", post(admin::admin_login));
@@ -95,10 +99,6 @@ fn build_router(state: AppState, cors_origins: Vec<String>) -> Router {
     let api_routes = Router::new()
         // OpenAI
         .route("/v1/chat/completions", post(handlers::chat_completions))
-        .route("/v1/models", get(handlers::list_models))
-        .route("/v1/models/{id}", get(handlers::get_model))
-        .route("/models", get(handlers::list_models))
-        .route("/models/{id}", get(handlers::get_model))
         // Anthropic
         .route("/anthropic/v1/messages", post(handlers::anthropic_messages))
         .route("/anthropic/v1/models", get(handlers::anthropic_list_models))
