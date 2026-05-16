@@ -73,10 +73,13 @@ password = "pass3"
 # max_output_tokens = [384000, 384000, 384000]
 # input_character_limits = [2621440, 163840, 2621440]
 
-# Bí danh mô hình (tùy chọn, căn theo index với model_types, mặc định không có bí danh)
-# Ví dụ model_types = ["default", "expert"], model_aliases = ["", "deepseek-v4-pro"]
-# Khi đó chỉ deepseek-v4-pro → expert (index 1), chuỗi rỗng bị bỏ qua
-# model_aliases = []
+# Bí danh mô hình (tùy chọn, căn theo index với model_types); có thể đặt nhiều alias ngăn bằng dấu phẩy.
+# Hậu tố -nothinking tự tắt thinking_enabled, giống dropdown ds2api.
+# model_aliases = [
+#   "deepseek-v4-flash, deepseek-v4-flash-nothinking, deepseek-v4-flash-search, deepseek-v4-flash-search-nothinking",
+#   "deepseek-v4-pro, deepseek-v4-pro-nothinking, deepseek-v4-pro-search, deepseek-v4-pro-search-nothinking",
+#   "deepseek-v4-vision, deepseek-v4-vision-nothinking",
+# ]
 
 # Cấu hình proxy (tùy chọn, vượt giới hạn khu vực CloudFront WAF)
 # Dùng node proxy ngoài Hoa Kỳ có thể tránh WAF Challenge

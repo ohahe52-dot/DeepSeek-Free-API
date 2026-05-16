@@ -112,9 +112,8 @@ pub struct DeepSeekConfig {
     /// Cấu hình tag gọi công cụ (tag fallback tùy chỉnh)
     #[serde(default)]
     pub tool_call: ToolCallTagConfig,
-    /// Alias model: khớp index với model_types, mặc định không có alias
-    /// Ví dụ model_types = ["default", "expert"], model_aliases = ["", "deepseek-v4-pro"]
-    /// thì chỉ deepseek-v4-pro -> expert (index 1), chuỗi rỗng bị bỏ qua
+    /// Alias model: khớp index với model_types, có thể có nhiều alias ngăn bằng dấu phẩy
+    /// Ví dụ model_types = ["default", "expert"], model_aliases = ["deepseek-v4-flash, deepseek-v4-flash-nothinking", "deepseek-v4-pro"]
     #[serde(default)]
     pub model_aliases: Vec<String>,
 }
@@ -206,14 +205,17 @@ impl DeepSeekConfig {
         for (i, ty) in self.model_types.iter().enumerate() {
             map.insert(format!("deepseek-{}", ty).to_lowercase(), ty.clone());
             if let Some(alias) = self.model_aliases.get(i) {
-                let alias = alias.trim().to_lowercase();
-                if !alias.is_empty() {
-                    map.insert(alias, ty.clone());
+                for alias in split_model_aliases(alias) {
+                    map.insert(alias.to_lowercase(), ty.clone());
                 }
             }
         }
         map
     }
+}
+
+fn split_model_aliases(alias: &str) -> impl Iterator<Item = &str> {
+    alias.split(',').map(str::trim).filter(|a| !a.is_empty())
 }
 
 /// Cấu hình HTTP server (bắt buộc)

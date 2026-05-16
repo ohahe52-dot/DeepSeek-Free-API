@@ -24,12 +24,14 @@ pub fn list(
         })
         .collect();
 
-    // Thêm model alias (khớp index với model_types)
+    // Thêm model alias (khớp index với model_types, hỗ trợ nhiều alias ngăn bằng dấu phẩy)
     for (i, alias) in aliases.iter().enumerate() {
         if let Some(_ty) = model_types.get(i) {
             let input = max_input_tokens.get(i).copied();
             let output = max_output_tokens.get(i).copied();
-            data.push(make_model(alias, input, output));
+            for alias in split_model_aliases(alias) {
+                data.push(make_model(alias, input, output));
+            }
         }
     }
 
@@ -60,18 +62,24 @@ pub fn get(
         return Some(make_model(&format!("deepseek-{}", ty), input, output));
     }
 
-    // Sau đó tìm trong aliases (khớp index với model_types)
+    // Sau đó tìm trong aliases (khớp index với model_types, hỗ trợ nhiều alias ngăn bằng dấu phẩy)
     for (i, alias) in aliases.iter().enumerate() {
-        if alias.to_lowercase() == target
-            && let Some(_ty) = model_types.get(i)
-        {
-            let input = max_input_tokens.get(i).copied();
-            let output = max_output_tokens.get(i).copied();
-            return Some(make_model(&target, input, output));
+        if let Some(_ty) = model_types.get(i) {
+            for alias in split_model_aliases(alias) {
+                if alias.to_lowercase() == target {
+                    let input = max_input_tokens.get(i).copied();
+                    let output = max_output_tokens.get(i).copied();
+                    return Some(make_model(alias, input, output));
+                }
+            }
         }
     }
 
     None
+}
+
+fn split_model_aliases(alias: &str) -> impl Iterator<Item = &str> {
+    alias.split(',').map(str::trim).filter(|a| !a.is_empty())
 }
 
 fn make_model(id: &str, input: Option<u32>, output: Option<u32>) -> OpenAIModel {
@@ -87,5 +95,48 @@ fn make_model(id: &str, input: Option<u32>, output: Option<u32>) -> OpenAIModel 
         max_context_length: input,
         max_tokens: output,
         max_completion_tokens: output,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_splits_comma_aliases() {
+        let models = list(
+            &["default".to_string()],
+            &[1024],
+            &[2048],
+            &["deepseek-v4-flash, deepseek-v4-flash-nothinking".to_string()],
+        );
+        let ids = models.data.into_iter().map(|m| m.id).collect::<Vec<_>>();
+
+        assert!(
+            ids.contains(&"deepseek-default".to_string()),
+            "base model missing"
+        );
+        assert!(
+            ids.contains(&"deepseek-v4-flash".to_string()),
+            "first alias missing"
+        );
+        assert!(
+            ids.contains(&"deepseek-v4-flash-nothinking".to_string()),
+            "second alias missing"
+        );
+    }
+
+    #[test]
+    fn get_finds_split_alias() {
+        let model = get(
+            &["default".to_string()],
+            &[1024],
+            &[2048],
+            &["deepseek-v4-flash, deepseek-v4-flash-nothinking".to_string()],
+            "deepseek-v4-flash-nothinking",
+        )
+        .unwrap();
+
+        assert_eq!(model.id, "deepseek-v4-flash-nothinking");
     }
 }
