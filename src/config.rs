@@ -15,6 +15,9 @@ pub struct Config {
     /// Cấu hình DeepSeek
     #[serde(default)]
     pub deepseek: DeepSeekConfig,
+    /// Context compression and summary cache
+    #[serde(default)]
+    pub context: ContextConfig,
     /// Cấu hình HTTP server (bắt buộc)
     pub server: ServerConfig,
     /// Cấu hình proxy (tùy chọn, dùng để vượt WAF)
@@ -60,6 +63,98 @@ pub struct ApiKeyEntry {
 pub struct ProxyConfig {
     /// Proxy URL, ví dụ http://127.0.0.1:7890 hoặc socks5://127.0.0.1:7891
     pub url: Option<String>,
+}
+
+/// Context compression config.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ContextConfig {
+    /// Enable non-blocking summary cache.
+    #[serde(default = "default_context_enabled")]
+    pub enabled: bool,
+    /// Use cached summary when old text reaches this size.
+    #[serde(default = "default_context_trigger_chars")]
+    pub trigger_chars: usize,
+    /// Start background summary before trigger so cache is ready later.
+    #[serde(default = "default_context_prewarm_chars")]
+    pub prewarm_chars: usize,
+    /// Keep recent messages verbatim.
+    #[serde(default = "default_context_keep_last_messages")]
+    pub keep_last_messages: usize,
+    /// Split old context for parallel background summaries.
+    #[serde(default = "default_context_chunk_chars")]
+    pub chunk_chars: usize,
+    /// Max concurrent background summary jobs.
+    #[serde(default = "default_context_summary_workers")]
+    pub summary_workers: usize,
+    /// Limit summary text injected into the final request.
+    #[serde(default = "default_context_summary_max_chars")]
+    pub summary_max_chars: usize,
+    /// In-memory cache TTL.
+    #[serde(default = "default_context_cache_ttl_secs")]
+    pub cache_ttl_secs: u64,
+    /// Delay background jobs so the foreground chat gets the account first.
+    #[serde(default = "default_context_background_delay_ms")]
+    pub background_delay_ms: u64,
+    /// ds_core model_type used for background summaries.
+    #[serde(default = "default_context_summary_model_type")]
+    pub summary_model_type: String,
+}
+
+impl Default for ContextConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_context_enabled(),
+            trigger_chars: default_context_trigger_chars(),
+            prewarm_chars: default_context_prewarm_chars(),
+            keep_last_messages: default_context_keep_last_messages(),
+            chunk_chars: default_context_chunk_chars(),
+            summary_workers: default_context_summary_workers(),
+            summary_max_chars: default_context_summary_max_chars(),
+            cache_ttl_secs: default_context_cache_ttl_secs(),
+            background_delay_ms: default_context_background_delay_ms(),
+            summary_model_type: default_context_summary_model_type(),
+        }
+    }
+}
+
+fn default_context_enabled() -> bool {
+    true
+}
+
+fn default_context_trigger_chars() -> usize {
+    24_000
+}
+
+fn default_context_prewarm_chars() -> usize {
+    16_000
+}
+
+fn default_context_keep_last_messages() -> usize {
+    12
+}
+
+fn default_context_chunk_chars() -> usize {
+    12_000
+}
+
+fn default_context_summary_workers() -> usize {
+    2
+}
+
+fn default_context_summary_max_chars() -> usize {
+    3_000
+}
+
+fn default_context_cache_ttl_secs() -> u64 {
+    86_400
+}
+
+fn default_context_background_delay_ms() -> u64 {
+    1_000
+}
+
+fn default_context_summary_model_type() -> String {
+    "default".to_string()
 }
 
 /// Cấu hình một tài khoản
@@ -400,6 +495,7 @@ impl Config {
             let default = Config {
                 accounts: Vec::new(),
                 deepseek: DeepSeekConfig::default(),
+                context: ContextConfig::default(),
                 server: ServerConfig {
                     host: "127.0.0.1".into(),
                     port: 22217,
@@ -454,6 +550,23 @@ impl Config {
                 self.deepseek.input_character_limits.len(),
                 n
             )));
+        }
+        if self.context.enabled {
+            if self.context.keep_last_messages == 0 {
+                return Err(ConfigError::Validation(
+                    "context.keep_last_messages must be > 0".to_string(),
+                ));
+            }
+            if self.context.trigger_chars < self.context.prewarm_chars {
+                return Err(ConfigError::Validation(
+                    "context.trigger_chars must be >= context.prewarm_chars".to_string(),
+                ));
+            }
+            if self.context.chunk_chars == 0 || self.context.summary_workers == 0 {
+                return Err(ConfigError::Validation(
+                    "context.chunk_chars and context.summary_workers must be > 0".to_string(),
+                ));
+            }
         }
         let mut seen_keys = std::collections::HashSet::new();
         for k in &self.api_keys {

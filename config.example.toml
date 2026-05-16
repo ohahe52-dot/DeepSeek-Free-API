@@ -81,6 +81,20 @@ password = "pass3"
 #   "deepseek-v4-vision, deepseek-v4-vision-nothinking",
 # ]
 
+[context]
+# Cache tóm tắt ngữ cảnh không chặn response:
+# chat bình thường; khi lịch sử đủ dài sẽ nén nền, request sau dùng bản nén để tăng tốc.
+enabled = true
+prewarm_chars = 16000
+trigger_chars = 24000
+keep_last_messages = 12
+chunk_chars = 12000
+summary_workers = 2
+summary_max_chars = 3000
+cache_ttl_secs = 86400
+background_delay_ms = 1000
+summary_model_type = "default"
+
 # Cấu hình proxy (tùy chọn, vượt giới hạn khu vực CloudFront WAF)
 # Dùng node proxy ngoài Hoa Kỳ có thể tránh WAF Challenge
 # [proxy]

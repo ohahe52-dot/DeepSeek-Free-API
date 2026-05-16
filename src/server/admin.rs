@@ -48,6 +48,7 @@ pub struct AdminStatsResponse {
 pub struct AdminConfigResponse {
     pub server: ServerConfigView,
     pub deepseek: DeepSeekConfigView,
+    pub context: crate::config::ContextConfig,
     pub accounts: Vec<AccountView>,
     pub proxy: ProxyConfigView,
     pub admin: AdminConfigView,
@@ -133,6 +134,7 @@ fn mask_config(config: &Config) -> AdminConfigResponse {
                 extra_ends: config.deepseek.tool_call.extra_ends.clone(),
             },
         },
+        context: config.context.clone(),
         proxy: ProxyConfigView {
             url: config.proxy.url.clone(),
         },
@@ -343,8 +345,13 @@ pub(crate) async fn admin_put_config(
         }
     }
 
-    // Hot-reload: sync accounts from the new config
-    state.adapter.sync_accounts(&new_config.accounts).await;
+    // Hot-reload adapter config.
+    if let Err(e) = state.adapter.reload_config(&new_config).await {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("Hot reload failed: {}", e),
+        );
+    }
     json_response(&serde_json::json!({"ok": true}))
 }
 

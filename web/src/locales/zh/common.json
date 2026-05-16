@@ -71,6 +71,7 @@
       "admin": "Admin",
       "server": "服务器",
       "deepseek": "DeepSeek",
+      "context": "上下文加速",
       "models": "模型类型",
       "toolCallTags": "工具调用标签",
       "proxy": "代理"
@@ -108,6 +109,18 @@
       "clientVersion": "Client Version",
       "clientPlatform": "Client Platform",
       "clientLocale": "Client Locale"
+    },
+    "context": {
+      "enabled": "启用后台上下文压缩",
+      "prewarmChars": "开始预热字符数",
+      "triggerChars": "使用缓存字符数",
+      "keepLastMessages": "保留最近消息数",
+      "chunkChars": "分块字符数",
+      "summaryWorkers": "并行摘要任务数",
+      "summaryMaxChars": "摘要最大字符数",
+      "cacheTtlSecs": "缓存 TTL 秒",
+      "backgroundDelayMs": "后台延迟毫秒",
+      "summaryModelType": "摘要模型类型"
     },
     "modelsSection": {
       "typeName": "类型名",

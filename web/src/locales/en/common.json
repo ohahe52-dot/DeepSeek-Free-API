@@ -71,6 +71,7 @@
       "admin": "Admin",
       "server": "Server",
       "deepseek": "DeepSeek",
+      "context": "Context Speedup",
       "models": "Model Types",
       "toolCallTags": "Tool Call Tags",
       "proxy": "Proxy"
@@ -108,6 +109,18 @@
       "clientVersion": "Client Version",
       "clientPlatform": "Client Platform",
       "clientLocale": "Client Locale"
+    },
+    "context": {
+      "enabled": "Enable background context compression",
+      "prewarmChars": "Prewarm from chars",
+      "triggerChars": "Use cache from chars",
+      "keepLastMessages": "Keep recent messages",
+      "chunkChars": "Chunk chars",
+      "summaryWorkers": "Parallel summary workers",
+      "summaryMaxChars": "Max summary chars",
+      "cacheTtlSecs": "Cache TTL seconds",
+      "backgroundDelayMs": "Background delay ms",
+      "summaryModelType": "Summary model type"
     },
     "modelsSection": {
       "typeName": "Type Name",

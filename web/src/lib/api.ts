@@ -174,6 +174,19 @@ export interface DeepSeekConfig {
   tool_call: ToolCallTagConfig;
 }
 
+export interface ContextConfig {
+  enabled: boolean;
+  trigger_chars: number;
+  prewarm_chars: number;
+  keep_last_messages: number;
+  chunk_chars: number;
+  summary_workers: number;
+  summary_max_chars: number;
+  cache_ttl_secs: number;
+  background_delay_ms: number;
+  summary_model_type: string;
+}
+
 export interface ProxyConfig {
   url: string | null;
 }
@@ -198,6 +211,7 @@ export interface ApiKeyEntry {
 export interface FullConfig {
   server: ServerConfig;
   deepseek: DeepSeekConfig;
+  context: ContextConfig;
   proxy: ProxyConfig;
   admin: AdminConfigResponse;
   accounts: AccountEntry[];

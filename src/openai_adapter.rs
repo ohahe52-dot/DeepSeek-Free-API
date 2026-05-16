@@ -14,6 +14,7 @@ use futures::{Stream, StreamExt};
 use crate::ds_core::{CoreError, DeepSeekCore};
 use std::collections::HashMap;
 
+mod context;
 mod models;
 pub(crate) mod request;
 pub(crate) mod response;
@@ -50,6 +51,7 @@ pub struct OpenAIAdapter {
     max_input_tokens: tokio::sync::RwLock<Vec<u32>>,
     max_output_tokens: tokio::sync::RwLock<Vec<u32>>,
     tag_config: tokio::sync::RwLock<Arc<response::TagConfig>>,
+    context: Arc<context::ContextOptimizer>,
     /// Encoder tiktoken BPE được cache (tránh tạo lại cho mỗi request)
     bpe: Option<Arc<tiktoken_rs::CoreBPE>>,
 }
@@ -59,6 +61,8 @@ impl OpenAIAdapter {
     pub async fn new(config: &crate::config::Config) -> Result<Self, OpenAIAdapterError> {
         let ds_core = Arc::new(DeepSeekCore::new(config).await?);
         let model_registry = config.deepseek.model_registry();
+        let tag_config = Arc::new(response::TagConfig::from_config(&config.deepseek.tool_call));
+        let context = context::ContextOptimizer::new(config.context.clone(), ds_core.clone());
         // Khởi tạo trước tiktoken BPE (tránh tạo lại bảng từ cho mỗi request)
         let bpe = tiktoken_rs::cl100k_base().ok().map(Arc::new);
 
@@ -69,9 +73,8 @@ impl OpenAIAdapter {
             model_aliases: tokio::sync::RwLock::new(config.deepseek.model_aliases.clone()),
             max_input_tokens: tokio::sync::RwLock::new(config.deepseek.max_input_tokens.clone()),
             max_output_tokens: tokio::sync::RwLock::new(config.deepseek.max_output_tokens.clone()),
-            tag_config: tokio::sync::RwLock::new(Arc::new(response::TagConfig::from_config(
-                &config.deepseek.tool_call,
-            ))),
+            tag_config: tokio::sync::RwLock::new(tag_config),
+            context,
             bpe,
         })
     }
@@ -118,6 +121,9 @@ impl OpenAIAdapter {
                 }),
             });
         }
+
+        let tag_config = self.tag_config.read().await.clone();
+        self.context.apply(&mut req, request_id, tag_config).await;
 
         let norm = request::normalize::apply(&req).map_err(OpenAIAdapterError::BadRequest)?;
         let tool_ctx = request::tools::extract(&req).map_err(OpenAIAdapterError::BadRequest)?;
@@ -405,6 +411,7 @@ impl OpenAIAdapter {
         *self.tag_config.write().await = Arc::new(response::TagConfig::from_config(
             &new_config.deepseek.tool_call,
         ));
+        self.context.reload(new_config.context.clone()).await;
         // Rebuild DsClient if needed (deepseek/proxy changes)
         self.ds_core.reload_config(new_config).await
     }

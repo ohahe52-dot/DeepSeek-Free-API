@@ -71,6 +71,7 @@
       "admin": "Quản trị",
       "server": "Máy chủ",
       "deepseek": "DeepSeek",
+      "context": "Tăng tốc ngữ cảnh",
       "models": "Loại mô hình",
       "toolCallTags": "Thẻ gọi công cụ",
       "proxy": "Proxy"
@@ -108,6 +109,18 @@
       "clientVersion": "Phiên bản client",
       "clientPlatform": "Nền tảng client",
       "clientLocale": "Ngôn ngữ client"
+    },
+    "context": {
+      "enabled": "Bật nén ngữ cảnh nền",
+      "prewarmChars": "Bắt đầu nén nền",
+      "triggerChars": "Dùng cache từ",
+      "keepLastMessages": "Giữ tin nhắn gần nhất",
+      "chunkChars": "Kích thước chunk",
+      "summaryWorkers": "Luồng nén song song",
+      "summaryMaxChars": "Độ dài tóm tắt tối đa",
+      "cacheTtlSecs": "TTL cache (giây)",
+      "backgroundDelayMs": "Trễ nền (ms)",
+      "summaryModelType": "Loại model tóm tắt"
     },
     "modelsSection": {
       "typeName": "Tên loại",

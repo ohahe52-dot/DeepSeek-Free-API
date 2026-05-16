@@ -17,6 +17,7 @@ import {
   Server,
   Cpu,
   Globe,
+  Gauge,
   Key,
   User,
   Shield,
@@ -102,6 +103,7 @@ export function ConfigPage() {
       const body: Record<string, unknown> = {
         server: config.server,
         deepseek: config.deepseek,
+        context: config.context,
         proxy: config.proxy,
         admin: {
           password_hash: '',
@@ -456,6 +458,92 @@ export function ConfigPage() {
       </Section>
 
       {/* ── Models (collapsible) ──────────────────────────────── */}
+      <Section title={t('config.sections.context')} icon={Gauge}>
+        <div className="space-y-4">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={config.context.enabled}
+              onChange={(e) => update(['context', 'enabled'], e.target.checked)}
+            />
+            {t('config.context.enabled')}
+          </label>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">{t('config.context.prewarmChars')}</label>
+              <Input
+                type="number"
+                value={config.context.prewarm_chars}
+                onChange={(e) => update(['context', 'prewarm_chars'], Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">{t('config.context.triggerChars')}</label>
+              <Input
+                type="number"
+                value={config.context.trigger_chars}
+                onChange={(e) => update(['context', 'trigger_chars'], Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">{t('config.context.keepLastMessages')}</label>
+              <Input
+                type="number"
+                value={config.context.keep_last_messages}
+                onChange={(e) => update(['context', 'keep_last_messages'], Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">{t('config.context.chunkChars')}</label>
+              <Input
+                type="number"
+                value={config.context.chunk_chars}
+                onChange={(e) => update(['context', 'chunk_chars'], Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">{t('config.context.summaryWorkers')}</label>
+              <Input
+                type="number"
+                value={config.context.summary_workers}
+                onChange={(e) => update(['context', 'summary_workers'], Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">{t('config.context.summaryMaxChars')}</label>
+              <Input
+                type="number"
+                value={config.context.summary_max_chars}
+                onChange={(e) => update(['context', 'summary_max_chars'], Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">{t('config.context.cacheTtlSecs')}</label>
+              <Input
+                type="number"
+                value={config.context.cache_ttl_secs}
+                onChange={(e) => update(['context', 'cache_ttl_secs'], Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">{t('config.context.backgroundDelayMs')}</label>
+              <Input
+                type="number"
+                value={config.context.background_delay_ms}
+                onChange={(e) => update(['context', 'background_delay_ms'], Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">{t('config.context.summaryModelType')}</label>
+              <Input
+                value={config.context.summary_model_type}
+                onChange={(e) => update(['context', 'summary_model_type'], e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+      </Section>
+
       <Section title={t('config.sections.models')} icon={Globe}>
         <div className="space-y-3">
           {config.deepseek.model_types.map((_, i) => (
