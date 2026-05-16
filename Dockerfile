@@ -6,6 +6,7 @@ WORKDIR /app/web
 COPY web/package.json web/bun.lock ./
 RUN bun install --frozen-lockfile
 
+COPY assets /app/assets
 COPY web/ ./
 RUN bun run build
 
