@@ -74,6 +74,7 @@ pub struct DeepSeekConfigView {
     pub max_input_tokens: Vec<u32>,
     pub max_output_tokens: Vec<u32>,
     pub input_character_limits: Vec<u32>,
+    pub max_concurrent_per_account: usize,
     pub model_aliases: Vec<String>,
     pub tool_call: ToolCallTagConfigView,
 }
@@ -128,6 +129,7 @@ fn mask_config(config: &Config) -> AdminConfigResponse {
             max_input_tokens: config.deepseek.max_input_tokens.clone(),
             max_output_tokens: config.deepseek.max_output_tokens.clone(),
             input_character_limits: config.deepseek.input_character_limits.clone(),
+            max_concurrent_per_account: config.deepseek.max_concurrent_per_account,
             model_aliases: config.deepseek.model_aliases.clone(),
             tool_call: ToolCallTagConfigView {
                 extra_starts: config.deepseek.tool_call.extra_starts.clone(),

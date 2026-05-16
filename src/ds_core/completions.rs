@@ -1008,6 +1008,8 @@ impl Completions {
         self.pool
             .set_client_solver(client.clone(), solver.clone())
             .await;
+        self.pool
+            .set_max_concurrent_per_account(config.deepseek.max_concurrent_per_account);
         *self.client.write().await = client;
         *self.solver.write().await = solver;
         Ok(())

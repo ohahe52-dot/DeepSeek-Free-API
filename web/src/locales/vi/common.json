@@ -81,7 +81,15 @@
       "mobile": "Số điện thoại",
       "areaCode": "Mã vùng",
       "password": "Mật khẩu",
-      "add": "Thêm tài khoản"
+      "add": "Thêm tài khoản",
+      "quickImport": "Nhập nhanh",
+      "quickImportPlaceholder": "preinartem@mailvip.net|tX#dHZtROaeV",
+      "delimiter": "Dấu tách",
+      "import": "Nhập",
+      "file": "File TXT",
+      "quickImportResult": "Đã thêm {added}, bỏ qua {skipped}",
+      "expand": "Mở rộng tài khoản",
+      "collapse": "Thu gọn tài khoản"
     },
     "apiKeys": {
       "description": "Mô tả",
@@ -108,7 +116,8 @@
       "userAgent": "User-Agent",
       "clientVersion": "Phiên bản client",
       "clientPlatform": "Nền tảng client",
-      "clientLocale": "Ngôn ngữ client"
+      "clientLocale": "Ngôn ngữ client",
+      "maxConcurrentPerAccount": "Session/request đồng thời mỗi tài khoản"
     },
     "context": {
       "enabled": "Bật nén ngữ cảnh nền",

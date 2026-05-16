@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { apiFetchConfig, apiSaveConfig, type FullConfig } from '@/lib/api';
+import { apiFetchConfig, apiSaveConfig, type AccountEntry, type FullConfig } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import {
   Copy,
   Eye,
   EyeOff,
+  FileText,
   Plus,
   Save,
   X,
@@ -22,6 +23,7 @@ import {
   User,
   Shield,
   Tags,
+  Upload,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -29,6 +31,50 @@ function generateApiKey(): string {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
   return 'sk-' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function accountKey(account: AccountEntry): string {
+  return (account.email || account.mobile).trim().toLowerCase();
+}
+
+function parseQuickAccounts(
+  text: string,
+  delimiter: string,
+): { accounts: AccountEntry[]; invalid: number } {
+  const sep = delimiter || '|';
+  let invalid = 0;
+  const accounts: AccountEntry[] = [];
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+
+    const parts = line.split(sep).map((part) => part.trim());
+    if (parts.length < 2) {
+      invalid += 1;
+      continue;
+    }
+
+    const login = parts[0];
+    const isEmail = login.includes('@');
+    const hasAreaCode = !isEmail && parts.length >= 3 && parts[1].startsWith('+');
+    const password = parts.slice(hasAreaCode ? 2 : 1).join(sep).trim();
+    if (!login || !password) {
+      invalid += 1;
+      continue;
+    }
+
+    accounts.push({
+      email: isEmail ? login : '',
+      mobile: isEmail ? '' : login,
+      area_code: hasAreaCode ? parts[1] : '',
+      password,
+    });
+  }
+
+  return { accounts, invalid };
 }
 
 /** Khung mục có thể thu gọn */
@@ -70,8 +116,11 @@ export function ConfigPage() {
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [revealedKeys, setRevealedKeys] = useState<Record<number, boolean>>({});
   const [revealedPasswords, setRevealedPasswords] = useState<Record<number, boolean>>({});
+  const [expandedAccounts, setExpandedAccounts] = useState<Record<number, boolean>>({});
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [quickAccountsText, setQuickAccountsText] = useState('');
+  const [quickAccountsDelimiter, setQuickAccountsDelimiter] = useState('|');
 
   useEffect(() => {
     apiFetchConfig()
@@ -122,6 +171,8 @@ export function ConfigPage() {
       if (res.ok) {
         setMessage({ type: 'ok', text: t('config.saveSuccess') });
         setRevealedKeys({});
+        setRevealedPasswords({});
+        setExpandedAccounts({});
         setOldPassword('');
         setNewPassword('');
         const fresh = await apiFetchConfig();
@@ -140,6 +191,8 @@ export function ConfigPage() {
   const handleCancel = () => {
     if (confirm(t('config.cancelConfirm'))) {
       setRevealedKeys({});
+      setRevealedPasswords({});
+      setExpandedAccounts({});
       apiFetchConfig()
         .then(setConfig)
         .catch(() => setMessage({ type: 'err', text: t('config.loadFailed') }));
@@ -158,6 +211,69 @@ export function ConfigPage() {
       document.execCommand('copy');
       document.body.removeChild(el);
     }
+  };
+
+  const importQuickAccounts = () => {
+    const parsed = parseQuickAccounts(quickAccountsText, quickAccountsDelimiter);
+    const seen = new Set(config.accounts.map(accountKey).filter(Boolean));
+    const nextAccounts = [...config.accounts];
+    let added = 0;
+    let duplicates = 0;
+
+    for (const account of parsed.accounts) {
+      const key = accountKey(account);
+      if (!key) {
+        continue;
+      }
+      if (seen.has(key)) {
+        duplicates += 1;
+        continue;
+      }
+      seen.add(key);
+      nextAccounts.push(account);
+      added += 1;
+    }
+
+    update(['accounts'], nextAccounts);
+    setMessage({
+      type: added > 0 ? 'ok' : 'err',
+      text: t('config.accounts.quickImportResult', {
+        added,
+        skipped: duplicates + parsed.invalid,
+      }),
+    });
+  };
+
+  const importQuickAccountsFile = async (file: File | null) => {
+    if (!file) {
+      return;
+    }
+
+    const text = await file.text();
+    setQuickAccountsText((prev) => (prev ? `${prev.trimEnd()}\n${text}` : text));
+  };
+
+  const updateAccountAt = (index: number, patch: Partial<AccountEntry>) => {
+    const next = [...config.accounts];
+    next[index] = { ...next[index], ...patch };
+    update(['accounts'], next);
+  };
+
+  const removeAccountAt = (index: number) => {
+    update(['accounts'], config.accounts.filter((_, j) => j !== index));
+    const shiftFlags = (flags: Record<number, boolean>) => {
+      const next: Record<number, boolean> = {};
+      for (const [key, value] of Object.entries(flags)) {
+        const current = Number(key);
+        if (!value || Number.isNaN(current) || current === index) {
+          continue;
+        }
+        next[current > index ? current - 1 : current] = value;
+      }
+      return next;
+    };
+    setRevealedPasswords(shiftFlags);
+    setExpandedAccounts(shiftFlags);
   };
 
   return (
@@ -182,84 +298,139 @@ export function ConfigPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {config.accounts.map((a, i) => (
-            <div key={i} className="flex flex-wrap items-end gap-2 p-3 border rounded-md">
-              <div className="flex-1 min-w-[120px]">
-                <label className="text-xs text-muted-foreground">{t('config.accounts.email')}</label>
-                <Input
-                  value={a.email}
+          <div className="grid gap-3 rounded-md border p-3 md:grid-cols-[minmax(0,1fr)_9rem_auto_auto]">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">{t('config.accounts.quickImport')}</label>
+              <textarea
+                className="min-h-24 w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+                value={quickAccountsText}
+                onChange={(e) => setQuickAccountsText(e.target.value)}
+                placeholder={t('config.accounts.quickImportPlaceholder')}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">{t('config.accounts.delimiter')}</label>
+              <Input
+                value={quickAccountsDelimiter}
+                onChange={(e) => setQuickAccountsDelimiter(e.target.value)}
+                placeholder="|"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={importQuickAccounts}
+                disabled={!quickAccountsText.trim() || !quickAccountsDelimiter}
+              >
+                <FileText className="h-4 w-4 mr-1" /> {t('config.accounts.import')}
+              </Button>
+            </div>
+            <div className="flex items-end">
+              <label className="inline-flex h-7 w-full cursor-pointer items-center justify-center gap-1 rounded-lg border border-border bg-background px-2.5 text-[0.8rem] font-medium hover:bg-muted hover:text-foreground">
+                <Upload className="h-4 w-4" />
+                {t('config.accounts.file')}
+                <input
+                  type="file"
+                  accept=".txt,text/plain"
+                  className="sr-only"
                   onChange={(e) => {
-                    const next = [...config.accounts];
-                    next[i] = { ...next[i], email: e.target.value };
-                    update(['accounts'], next);
+                    void importQuickAccountsFile(e.currentTarget.files?.[0] ?? null);
+                    e.currentTarget.value = '';
                   }}
                 />
-              </div>
-              <div className="w-24">
-                <label className="text-xs text-muted-foreground">{t('config.accounts.mobile')}</label>
-                <Input
-                  value={a.mobile}
-                  onChange={(e) => {
-                    const next = [...config.accounts];
-                    next[i] = { ...next[i], mobile: e.target.value };
-                    update(['accounts'], next);
-                  }}
-                />
-              </div>
-              <div className="w-20">
-                <label className="text-xs text-muted-foreground">{t('config.accounts.areaCode')}</label>
-                <Input
-                  value={a.area_code}
-                  onChange={(e) => {
-                    const next = [...config.accounts];
-                    next[i] = { ...next[i], area_code: e.target.value };
-                    update(['accounts'], next);
-                  }}
-                />
-              </div>
-              <div className="flex-1 min-w-[120px]">
-                <label className="text-xs text-muted-foreground">{t('config.accounts.password')}</label>
-                <div className="flex items-center gap-1">
-                  <Input
-                    type={revealedPasswords[i] ? 'text' : 'password'}
-                    value={a.password}
-                    onChange={(e) => {
-                      const next = [...config.accounts];
-                      next[i] = { ...next[i], password: e.target.value };
-                      update(['accounts'], next);
-                    }}
-                  />
+              </label>
+            </div>
+          </div>
+          {config.accounts.map((a, i) => {
+            const isExpanded = Boolean(expandedAccounts[i]);
+            const login = a.email || [a.area_code, a.mobile].filter(Boolean).join(' ') || '-';
+            const passwordPreview = a.password ? (revealedPasswords[i] ? a.password : '********') : '-';
+
+            return (
+              <div key={i} className="rounded-md border">
+                <div className="flex items-center gap-2 p-2">
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="shrink-0"
-                    onClick={() =>
-                      setRevealedPasswords((prev) => ({ ...prev, [i]: !prev[i] }))
-                    }
+                    className="h-8 w-8 shrink-0"
+                    onClick={() => setExpandedAccounts((prev) => ({ ...prev, [i]: !prev[i] }))}
+                    title={isExpanded ? t('config.accounts.collapse') : t('config.accounts.expand')}
+                    aria-label={isExpanded ? t('config.accounts.collapse') : t('config.accounts.expand')}
                   >
-                    {revealedPasswords[i] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  </Button>
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() => setExpandedAccounts((prev) => ({ ...prev, [i]: !prev[i] }))}
+                  >
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="shrink-0 text-sm font-medium">#{i + 1}</span>
+                      <span className="min-w-0 max-w-full truncate text-sm">{login}</span>
+                      <span className="min-w-0 max-w-full truncate font-mono text-xs text-muted-foreground">
+                        {passwordPreview}
+                      </span>
+                    </div>
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    onClick={() => removeAccountAt(i)}
+                  >
+                    <X className="h-4 w-4" />
                   </Button>
                 </div>
+                {isExpanded && (
+                  <div className="grid gap-2 border-t p-3 md:grid-cols-[minmax(0,1fr)_10rem_8rem_minmax(0,1fr)]">
+                    <div className="min-w-0">
+                      <label className="text-xs text-muted-foreground">{t('config.accounts.email')}</label>
+                      <Input value={a.email} onChange={(e) => updateAccountAt(i, { email: e.target.value })} />
+                    </div>
+                    <div className="min-w-0">
+                      <label className="text-xs text-muted-foreground">{t('config.accounts.mobile')}</label>
+                      <Input value={a.mobile} onChange={(e) => updateAccountAt(i, { mobile: e.target.value })} />
+                    </div>
+                    <div className="min-w-0">
+                      <label className="text-xs text-muted-foreground">{t('config.accounts.areaCode')}</label>
+                      <Input value={a.area_code} onChange={(e) => updateAccountAt(i, { area_code: e.target.value })} />
+                    </div>
+                    <div className="min-w-0">
+                      <label className="text-xs text-muted-foreground">{t('config.accounts.password')}</label>
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type={revealedPasswords[i] ? 'text' : 'password'}
+                          value={a.password}
+                          onChange={(e) => updateAccountAt(i, { password: e.target.value })}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="shrink-0"
+                          onClick={() => setRevealedPasswords((prev) => ({ ...prev, [i]: !prev[i] }))}
+                        >
+                          {revealedPasswords[i] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="shrink-0"
-                onClick={() => update(['accounts'], config.accounts.filter((_, j) => j !== i))}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          ))}
+            );
+          })}
           <Button
             variant="outline"
             size="sm"
-            onClick={() =>
+            onClick={() => {
+              const nextIndex = config.accounts.length;
               update(['accounts'], [
                 ...config.accounts,
                 { email: '', mobile: '', area_code: '', password: '' },
-              ])
-            }
+              ]);
+              setExpandedAccounts((prev) => ({ ...prev, [nextIndex]: true }));
+            }}
           >
             <Plus className="h-4 w-4 mr-1" /> {t('config.accounts.add')}
           </Button>
@@ -452,6 +623,19 @@ export function ConfigPage() {
             <Input
               value={config.deepseek.client_locale}
               onChange={(e) => update(['deepseek', 'client_locale'], e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">
+              {t('config.deepseek.maxConcurrentPerAccount')}
+            </label>
+            <Input
+              type="number"
+              min={1}
+              value={config.deepseek.max_concurrent_per_account ?? 1}
+              onChange={(e) =>
+                update(['deepseek', 'max_concurrent_per_account'], Math.max(1, Number(e.target.value) || 1))
+              }
             />
           </div>
         </div>

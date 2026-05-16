@@ -109,6 +109,8 @@ export interface AccountStatus {
   email: string;
   mobile: string;
   state: string;
+  active_count: number;
+  max_concurrent: number;
   last_released_ms: number;
   error_count: number;
 }
@@ -170,6 +172,7 @@ export interface DeepSeekConfig {
   max_input_tokens: number[];
   max_output_tokens: number[];
   input_character_limits: number[];
+  max_concurrent_per_account: number;
   model_aliases: string[];
   tool_call: ToolCallTagConfig;
 }

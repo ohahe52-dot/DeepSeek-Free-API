@@ -61,7 +61,7 @@ impl DeepSeekCore {
         let wasm_bytes = client.get_wasm().await?;
         let solver = PowSolver::new(&wasm_bytes)?;
 
-        let pool = AccountPool::new();
+        let pool = AccountPool::new(config.deepseek.max_concurrent_per_account);
         pool.init(config.accounts.clone(), &client, &solver)
             .await
             .map_err(|e| match e {

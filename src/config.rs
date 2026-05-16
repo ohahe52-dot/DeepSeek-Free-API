@@ -204,6 +204,9 @@ pub struct DeepSeekConfig {
     /// Vượt giới hạn này: model expert dùng ghi session theo chunk, model khác tự fallback sang gửi inline
     #[serde(default = "default_input_character_limits")]
     pub input_character_limits: Vec<u32>,
+    /// Số request/session tối đa chạy đồng thời trên mỗi tài khoản.
+    #[serde(default = "default_max_concurrent_per_account")]
+    pub max_concurrent_per_account: usize,
     /// Cấu hình tag gọi công cụ (tag fallback tùy chỉnh)
     #[serde(default)]
     pub tool_call: ToolCallTagConfig,
@@ -266,6 +269,7 @@ impl Default for DeepSeekConfig {
             max_input_tokens: default_max_input_tokens(),
             max_output_tokens: default_max_output_tokens(),
             input_character_limits: default_input_character_limits(),
+            max_concurrent_per_account: default_max_concurrent_per_account(),
             tool_call: ToolCallTagConfig::default(),
             model_aliases: default_model_aliases(),
         }
@@ -290,6 +294,10 @@ fn default_max_output_tokens() -> Vec<u32> {
 
 fn default_input_character_limits() -> Vec<u32> {
     vec![2_621_440, 163_840, 2_621_440]
+}
+
+fn default_max_concurrent_per_account() -> usize {
+    1
 }
 
 fn default_model_aliases() -> Vec<String> {
@@ -550,6 +558,11 @@ impl Config {
                 self.deepseek.input_character_limits.len(),
                 n
             )));
+        }
+        if self.deepseek.max_concurrent_per_account == 0 {
+            return Err(ConfigError::Validation(
+                "deepseek.max_concurrent_per_account must be > 0".to_string(),
+            ));
         }
         if self.context.enabled {
             if self.context.keep_last_messages == 0 {

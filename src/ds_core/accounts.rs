@@ -1,9 +1,10 @@
 //! Quản lý pool tài khoản - cân bằng tải nhiều tài khoản
 //!
-//! 1 account = 1 session = 1 concurrency. Muốn nhiều concurrency thì mở rộng số tài khoản theo chiều ngang.
+//! Mặc định 1 account = 1 session = 1 concurrency. Có thể tăng giới hạn theo cấu hình,
+//! nhưng vẫn ưu tiên xoay ngang nhiều tài khoản.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU8, AtomicUsize, Ordering};
 use std::time::SystemTime;
 
 use dashmap::DashMap;
@@ -51,6 +52,8 @@ pub struct AccountStatus {
     pub email: String,
     pub mobile: String,
     pub state: String,
+    pub active_count: usize,
+    pub max_concurrent: usize,
     /// Timestamp nhả cuối cùng (ms), 0 nghĩa là chưa từng dùng
     pub last_released_ms: i64,
     /// Số lần đăng nhập thất bại liên tiếp
@@ -62,6 +65,8 @@ pub struct Account {
     email: String,
     mobile: String,
     state: AtomicU8,
+    /// Số request/session đang giữ tài khoản này.
+    active_count: AtomicUsize,
     /// Timestamp lần nhả tài khoản gần nhất (ms), dùng để xét cooldown
     last_released: AtomicI64,
     /// Số lần đăng nhập thất bại liên tiếp
@@ -91,11 +96,87 @@ impl Account {
     }
 
     pub fn is_busy(&self) -> bool {
-        self.state() == AccountState::Busy
+        self.active_count.load(Ordering::Relaxed) > 0
     }
 
-    pub fn is_available(&self) -> bool {
-        self.state() == AccountState::Idle
+    fn visible_state(&self) -> AccountState {
+        match self.state() {
+            AccountState::Error => AccountState::Error,
+            AccountState::Invalid => AccountState::Invalid,
+            _ if self.is_busy() => AccountState::Busy,
+            _ => AccountState::Idle,
+        }
+    }
+
+    fn can_accept_more(&self, max_concurrent: usize) -> bool {
+        matches!(self.state(), AccountState::Idle | AccountState::Busy)
+            && self.active_count.load(Ordering::Relaxed) < max_concurrent
+    }
+
+    fn try_claim(&self, max_concurrent: usize) -> bool {
+        let max_concurrent = max_concurrent.max(1);
+        loop {
+            let state = self.state();
+            if !matches!(state, AccountState::Idle | AccountState::Busy) {
+                return false;
+            }
+
+            let active = self.active_count.load(Ordering::Relaxed);
+            if active >= max_concurrent {
+                return false;
+            }
+
+            if active == 0
+                && state == AccountState::Idle
+                && self
+                    .state
+                    .compare_exchange(
+                        AccountState::Idle as u8,
+                        AccountState::Busy as u8,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    )
+                    .is_err()
+            {
+                continue;
+            }
+
+            if self
+                .active_count
+                .compare_exchange(active, active + 1, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                if self.state() == AccountState::Busy {
+                    return true;
+                }
+                self.release_claim();
+                return false;
+            }
+        }
+    }
+
+    fn release_claim(&self) {
+        let previous = self.active_count.fetch_sub(1, Ordering::Relaxed);
+        if previous <= 1 {
+            self.active_count.store(0, Ordering::Relaxed);
+            self.state
+                .compare_exchange(
+                    AccountState::Busy as u8,
+                    AccountState::Idle as u8,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .ok();
+            self.touch_last_released();
+        }
+    }
+
+    fn touch_last_released(&self) {
+        let d = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default();
+        let now_ms = (d.as_secs() * 1000 + u64::from(d.subsec_millis())) as i64;
+        self.last_released.store(now_ms, Ordering::Relaxed);
     }
 
     /// Tạo tài khoản trạng thái Invalid (dùng khi init thất bại, vẫn thêm vào pool để frontend hiển thị)
@@ -105,6 +186,7 @@ impl Account {
             email: creds.email.clone(),
             mobile: creds.mobile.clone(),
             state: AtomicU8::new(AccountState::Invalid as u8),
+            active_count: AtomicUsize::new(0),
             last_released: AtomicI64::new(0),
             error_count: AtomicU8::new(MAX_ERROR_COUNT),
             creds,
@@ -125,21 +207,7 @@ impl AccountGuard {
 
 impl Drop for AccountGuard {
     fn drop(&mut self) {
-        // Chỉ nhả từ Busy về Idle (tránh ghi đè Error/Invalid)
-        self.account
-            .state
-            .compare_exchange(
-                AccountState::Busy as u8,
-                AccountState::Idle as u8,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            )
-            .ok();
-        let d = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default();
-        let now_ms = (d.as_secs() * 1000 + u64::from(d.subsec_millis())) as i64;
-        self.account.last_released.store(now_ms, Ordering::Relaxed);
+        self.account.release_claim();
     }
 }
 
@@ -148,6 +216,7 @@ pub struct AccountPool {
     accounts: DashMap<String, Arc<Account>>,
     client: RwLock<Option<DsClient>>,
     solver: RwLock<Option<PowSolver>>,
+    max_concurrent_per_account: AtomicUsize,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -182,12 +251,24 @@ pub enum PoolError {
 }
 
 impl AccountPool {
-    pub fn new() -> Self {
+    pub fn new(max_concurrent_per_account: usize) -> Self {
         Self {
             accounts: DashMap::new(),
             client: RwLock::new(None),
             solver: RwLock::new(None),
+            max_concurrent_per_account: AtomicUsize::new(max_concurrent_per_account.max(1)),
         }
+    }
+
+    fn max_concurrent_per_account(&self) -> usize {
+        self.max_concurrent_per_account
+            .load(Ordering::Relaxed)
+            .max(1)
+    }
+
+    pub fn set_max_concurrent_per_account(&self, value: usize) {
+        self.max_concurrent_per_account
+            .store(value.max(1), Ordering::Relaxed);
     }
 
     pub async fn init(
@@ -239,7 +320,7 @@ impl AccountPool {
             join_all(futures).await.into_iter().flatten().collect();
         let idle_count = results
             .iter()
-            .filter(|(_, a)| a.state() == AccountState::Idle)
+            .filter(|(_, a)| a.visible_state() == AccountState::Idle)
             .count();
 
         for (id, account) in &results {
@@ -329,36 +410,37 @@ impl AccountPool {
             .unwrap_or_default();
         let now_ms = (d.as_secs() * 1000 + u64::from(d.subsec_millis())) as i64;
 
-        let mut best: Option<Arc<Account>> = None;
-        let mut best_idle = i64::MIN;
+        let max_concurrent = self.max_concurrent_per_account();
+        let mut candidates: Vec<(bool, i64, Arc<Account>)> = self
+            .accounts
+            .iter()
+            .filter_map(|entry| {
+                let account = entry.value();
+                if account.can_accept_more(max_concurrent) {
+                    let idle = now_ms - account.last_released.load(Ordering::Relaxed);
+                    Some((!account.is_busy(), idle, Arc::clone(account)))
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-        for entry in self.accounts.iter() {
-            let account = entry.value();
-            if !account.is_available() {
-                continue;
-            }
-            let idle = now_ms - account.last_released.load(Ordering::Relaxed);
-            if idle > best_idle {
-                best_idle = idle;
-                best = Some(Arc::clone(account));
+        candidates.sort_unstable_by_key(|(unused, idle, _)| {
+            (std::cmp::Reverse(*unused), std::cmp::Reverse(*idle))
+        });
+
+        for (_, _, account) in candidates {
+            if account.try_claim(max_concurrent) {
+                return Some(AccountGuard { account });
             }
         }
 
-        let account = best?;
-        account
-            .state
-            .compare_exchange(
-                AccountState::Idle as u8,
-                AccountState::Busy as u8,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            )
-            .ok()?;
-        Some(AccountGuard { account })
+        None
     }
 
     /// Lấy trạng thái chi tiết của mọi tài khoản
     pub fn account_statuses(&self) -> Vec<AccountStatus> {
+        let max_concurrent = self.max_concurrent_per_account();
         self.accounts
             .iter()
             .map(|entry| {
@@ -366,7 +448,9 @@ impl AccountPool {
                 AccountStatus {
                     email: a.email.clone(),
                     mobile: a.mobile.clone(),
-                    state: a.state().as_str().to_string(),
+                    state: a.visible_state().as_str().to_string(),
+                    active_count: a.active_count.load(Ordering::Relaxed),
+                    max_concurrent,
                     last_released_ms: a.last_released.load(Ordering::Relaxed),
                     error_count: a.error_count.load(Ordering::Relaxed),
                 }
@@ -387,16 +471,11 @@ impl AccountPool {
     pub fn mark_error(&self, email_or_mobile: &str) {
         if let Some(entry) = self.accounts.get(email_or_mobile) {
             let account = entry.value();
-            // Chỉ chuyển từ Busy sang Error (tránh ghi đè Invalid)
-            account
-                .state
-                .compare_exchange(
-                    AccountState::Busy as u8,
-                    AccountState::Error as u8,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                )
-                .ok();
+            if account.state() != AccountState::Invalid {
+                account
+                    .state
+                    .store(AccountState::Error as u8, Ordering::Relaxed);
+            }
             warn!(target: "ds_core::accounts", "Đánh dấu tài khoản {} là Error", account.display_id());
         }
     }
@@ -422,6 +501,12 @@ impl AccountPool {
             return Err(format!(
                 "Trạng thái tài khoản là {}, chỉ Error/Invalid mới được đăng nhập lại",
                 state.as_str()
+            ));
+        }
+        if account.is_busy() {
+            return Err(format!(
+                "Tài khoản {} đang được sử dụng, thử lại sau",
+                account.display_id()
             ));
         }
 
@@ -482,7 +567,7 @@ impl AccountPool {
 
                 for entry in pool.accounts.iter() {
                     let account = entry.value();
-                    if account.state() == AccountState::Error {
+                    if account.state() == AccountState::Error && !account.is_busy() {
                         Self::re_login_account(account, &client, &solver).await;
                     }
                 }
@@ -564,6 +649,7 @@ async fn try_init_account(
         email: creds.email.clone(),
         mobile: creds.mobile.clone(),
         state: AtomicU8::new(AccountState::Idle as u8),
+        active_count: AtomicUsize::new(0),
         last_released: AtomicI64::new(0),
         error_count: AtomicU8::new(0),
         creds: creds.clone(),
@@ -632,4 +718,110 @@ async fn health_check(
         model_type, display_id, start.elapsed()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn account_config(email: &str) -> AccountConfig {
+        AccountConfig {
+            email: email.to_string(),
+            mobile: String::new(),
+            area_code: String::new(),
+            password: "pass".to_string(),
+        }
+    }
+
+    fn idle_account(email: &str, last_released_ms: i64) -> Arc<Account> {
+        Arc::new(Account {
+            token: std::sync::RwLock::new(Arc::<str>::from("token")),
+            email: email.to_string(),
+            mobile: String::new(),
+            state: AtomicU8::new(AccountState::Idle as u8),
+            active_count: AtomicUsize::new(0),
+            last_released: AtomicI64::new(last_released_ms),
+            error_count: AtomicU8::new(0),
+            creds: account_config(email),
+        })
+    }
+
+    #[test]
+    fn get_account_claims_distinct_idle_accounts_without_waiting() {
+        let pool = AccountPool::new(1);
+        let ids = [
+            "user0@example.com",
+            "user1@example.com",
+            "user2@example.com",
+        ];
+
+        for (idx, id) in ids.iter().enumerate() {
+            let id = *id;
+            let last_released_ms = i64::try_from(idx).expect("test index fits i64");
+            pool.accounts
+                .insert(id.to_string(), idle_account(id, last_released_ms));
+        }
+
+        let guard_a = pool
+            .get_account()
+            .expect("first idle account should be claimed");
+        let guard_b = pool
+            .get_account()
+            .expect("second idle account should be claimed");
+        let guard_c = pool
+            .get_account()
+            .expect("third idle account should be claimed");
+
+        let mut claimed = [
+            guard_a.account().display_id().to_string(),
+            guard_b.account().display_id().to_string(),
+            guard_c.account().display_id().to_string(),
+        ];
+        claimed.sort();
+        let expected = [
+            "user0@example.com".to_string(),
+            "user1@example.com".to_string(),
+            "user2@example.com".to_string(),
+        ];
+
+        assert_eq!(
+            claimed, expected,
+            "pool should claim each idle account once before reporting exhaustion"
+        );
+        assert!(
+            pool.get_account().is_none(),
+            "pool should be exhausted while all guards are held"
+        );
+    }
+
+    #[test]
+    fn get_account_allows_configured_parallel_claims_per_account() {
+        let pool = AccountPool::new(2);
+        pool.accounts
+            .insert("user0@example.com".to_string(), idle_account("user0@example.com", 0));
+
+        let guard_a = pool
+            .get_account()
+            .expect("first claim should use account");
+        let guard_b = pool
+            .get_account()
+            .expect("second claim should share account when limit is 2");
+
+        assert_eq!(guard_a.account().display_id(), "user0@example.com");
+        assert_eq!(guard_b.account().display_id(), "user0@example.com");
+        assert_eq!(guard_a.account().visible_state(), AccountState::Busy);
+        assert_eq!(guard_a.account().active_count.load(Ordering::Relaxed), 2);
+        assert!(
+            pool.get_account().is_none(),
+            "pool should be exhausted after configured per-account limit"
+        );
+
+        drop(guard_a);
+        assert_eq!(guard_b.account().active_count.load(Ordering::Relaxed), 1);
+        drop(guard_b);
+        let status = pool.account_statuses();
+        assert_eq!(status[0].state, "idle");
+        assert_eq!(status[0].active_count, 0);
+        assert_eq!(status[0].max_concurrent, 2);
+    }
 }

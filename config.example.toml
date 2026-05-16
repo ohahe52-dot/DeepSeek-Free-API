@@ -66,6 +66,10 @@ password = "pass3"
 # Header X-Client-Locale
 # client_locale = "vi_VN"
 
+# So request/session toi da chay dong thoi tren moi tai khoan (mac dinh 1).
+# Tang so nay co the nhanh hon, nhung de gap rate limit hon.
+# max_concurrent_per_account = 1
+
 # Danh sách loại mô hình được hỗ trợ, mặc định ["default", "expert", "vision"]
 # Mỗi loại tự ánh xạ thành model_id OpenAI: deepseek-<type>
 # model_types = ["default", "expert", "vision"]

@@ -81,7 +81,15 @@
       "mobile": "手机",
       "areaCode": "区号",
       "password": "密码",
-      "add": "添加账号"
+      "add": "添加账号",
+      "quickImport": "快速导入",
+      "quickImportPlaceholder": "preinartem@mailvip.net|tX#dHZtROaeV",
+      "delimiter": "分隔符",
+      "import": "导入",
+      "file": "TXT 文件",
+      "quickImportResult": "已添加 {added}，跳过 {skipped}",
+      "expand": "展开账号",
+      "collapse": "收起账号"
     },
     "apiKeys": {
       "description": "描述",
@@ -108,7 +116,8 @@
       "userAgent": "User-Agent",
       "clientVersion": "Client Version",
       "clientPlatform": "Client Platform",
-      "clientLocale": "Client Locale"
+      "clientLocale": "Client Locale",
+      "maxConcurrentPerAccount": "每个账号的并发会话/请求数"
     },
     "context": {
       "enabled": "启用后台上下文压缩",

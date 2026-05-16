@@ -81,7 +81,15 @@
       "mobile": "Mobile",
       "areaCode": "Area Code",
       "password": "Password",
-      "add": "Add Account"
+      "add": "Add Account",
+      "quickImport": "Quick import",
+      "quickImportPlaceholder": "preinartem@mailvip.net|tX#dHZtROaeV",
+      "delimiter": "Delimiter",
+      "import": "Import",
+      "file": "TXT file",
+      "quickImportResult": "Added {added}, skipped {skipped}",
+      "expand": "Expand account",
+      "collapse": "Collapse account"
     },
     "apiKeys": {
       "description": "Description",
@@ -108,7 +116,8 @@
       "userAgent": "User-Agent",
       "clientVersion": "Client Version",
       "clientPlatform": "Client Platform",
-      "clientLocale": "Client Locale"
+      "clientLocale": "Client Locale",
+      "maxConcurrentPerAccount": "Concurrent sessions/requests per account"
     },
     "context": {
       "enabled": "Enable background context compression",
