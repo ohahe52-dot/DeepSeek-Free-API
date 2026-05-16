@@ -1,4 +1,4 @@
-//! OpenAI Chunk 生成器 —— 将 DsFrame 映射为 ChatCompletionsResponseChunk
+//! Bộ tạo OpenAI Chunk - map DsFrame thành ChatCompletionsResponseChunk
 
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -60,7 +60,7 @@ pub(crate) fn make_chunk(
 }
 
 pin_project! {
-    // 将 DsFrame 增量帧映射为 OpenAI ChatCompletionsResponseChunk 的流转换器
+    // Bộ chuyển stream map frame delta DsFrame thành OpenAI ChatCompletionsResponseChunk
     pub struct ConverterStream<S> {
         #[pin]
         inner: S,
@@ -74,7 +74,7 @@ pin_project! {
 }
 
 impl<S> ConverterStream<S> {
-    /// 创建 Chunk 转换流
+    /// Tạo stream chuyển đổi Chunk
     pub fn new(
         inner: S,
         model: String,
@@ -103,7 +103,7 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
 
-        // 如果已结束且有待发 usage，优先发送
+        // Nếu đã kết thúc và còn usage chờ gửi, gửi trước
         if *this.finished
             && *this.include_usage
             && let Some(u) = this.usage_value.take()
@@ -119,7 +119,7 @@ where
                 Poll::Ready(Some(Ok(frame))) => match frame {
                     DsFrame::Role => {
                         trace!(target: "adapter", ">>> conv: role=assistant");
-                        // 第一个 chunk 带上 prompt_tokens，供下游（如 AnthropicStream）提前获取
+                        // Chunk đầu mang prompt_tokens để downstream (như AnthropicStream) lấy sớm
                         return Poll::Ready(Some(Ok(ChatCompletionsResponseChunk {
                             usage: Some(make_usage(*this.prompt_tokens, 0)),
                             ..make_chunk(
@@ -159,7 +159,7 @@ where
                     {
                         trace!(target: "adapter", ">>> conv: finish=stop");
                         *this.finished = true;
-                        // 将 usage 合并到 finish chunk，确保下游（如 Anthropic）能拿到 completion_tokens
+                        // Gộp usage vào finish chunk, đảm bảo downstream (như Anthropic) lấy được completion_tokens
                         let mut chunk = make_chunk(this.model, Delta::default(), Some("stop"));
                         if *this.include_usage
                             && let Some(u) = this.usage_value.take()
@@ -183,7 +183,7 @@ where
                 Poll::Ready(Some(Err(e))) => return Poll::Ready(Some(Err(e))),
                 Poll::Ready(None) => {
                     if !*this.finished {
-                        warn!(target: "adapter", "转换器流提前结束: model={}, usage_value={:?}", this.model, this.usage_value);
+                        warn!(target: "adapter", "Stream converter kết thúc sớm: model={}, usage_value={:?}", this.model, this.usage_value);
                     }
                     if *this.finished
                         && *this.include_usage

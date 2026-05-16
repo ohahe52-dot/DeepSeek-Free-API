@@ -1,12 +1,12 @@
 {
-  "name": "图片HTTP链接",
+  "name": "Lien ket HTTP hinh anh",
   "endpoint": "anthropic",
   "category": "basic",
   "models": ["deepseek-default", "deepseek-expert"],
   "request": {
     "messages": [
       {"role": "user", "content": [
-        {"type": "text", "text": "请访问这个网页，告诉我它包含什么内容。"},
+        {"type": "text", "text": "Hay truy cap trang web nay va cho toi biet no chua noi dung gi."},
         {"type": "image", "source": {"type": "url", "url": "https://example.com"}}
       ]}
     ],

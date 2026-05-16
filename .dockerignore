@@ -1,0 +1,16 @@
+.git
+target
+web/node_modules
+web/dist
+web/dist-ssr
+py-e2e-tests/.venv
+py-e2e-tests/.pytest_cache
+**/__pycache__
+logs
+stats.json
+**/config.toml
+*.log
+*.local
+.DS_Store
+.idea
+.vscode

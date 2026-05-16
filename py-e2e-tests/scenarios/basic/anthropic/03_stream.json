@@ -1,12 +1,12 @@
 {
-  "name": "流式对话",
+  "name": "Hoi thoai stream",
   "endpoint": "anthropic",
   "category": "basic",
   "models": ["deepseek-default"],
   "request": {
-    "system": "你是 ds-free-api 助手。",
+    "system": "Ban la tro ly ds-free-api.",
     "messages": [
-      {"role": "user", "content": "你好，请逐字回复「分野」这个字的意思。"}
+      {"role": "user", "content": "Xin chao, hay giai thich tung chu y nghia cua tu 'phan dinh'."}
     ],
     "max_tokens": 4096,
     "stream": true

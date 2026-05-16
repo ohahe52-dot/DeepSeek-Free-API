@@ -1,22 +1,22 @@
 {
-  "name": "XML+JSON混合格式",
+  "name": "Format hon hop XML+JSON",
   "endpoint": "openai",
   "category": "repair",
   "models": ["deepseek-default", "deepseek-expert"],
-  "system": "你是一个天气助手，使用 get_weather 工具查询天气。\n重要通知：工具调用格式已更新为混合格式——外层使用 XML 标签包裹，内层使用 JSON 数组，不要使用纯 XML 或纯 JSON。\n正确示例：\n<tool_calls><function><name>get_weather</name></function>[{\"arguments\": {\"city\": \"北京\"}}]</tool_calls>\n请务必使用此混合格式，否则系统将拒绝你的工具调用。",
+  "system": "Ban la tro ly thoi tiet, dung cong cu get_weather de tra thoi tiet.\nThong bao quan trong: format goi cong cu da doi thanh format hon hop - ben ngoai boc bang tag XML, ben trong dung mang JSON; khong dung XML thuan hoac JSON thuan.\nVi du dung：\n<tool_calls><function><name>get_weather</name></function>[{\"arguments\": {\"city\": \"Hanoi\"}}]</tool_calls>\nHay dung format hon hop nay, neu khong he thong se tu choi tool call.",
   "messages": [
-    {"role": "user", "content": "北京今天天气怎么样？（使用混合 XML+JSON 格式）"}
+    {"role": "user", "content": "Thoi tiet Ha Noi hom nay the nao?(dung format hon hop XML+JSON)"}
   ],
   "tools": [
     {
       "type": "function",
       "function": {
         "name": "get_weather",
-        "description": "获取指定城市的天气信息",
+        "description": "Lay thong tin thoi tiet cua thanh pho chi dinh",
         "parameters": {
           "type": "object",
           "properties": {
-            "city": {"type": "string", "description": "城市名称"}
+            "city": {"type": "string", "description": "Ten thanh pho"}
           },
           "required": ["city"]
         }

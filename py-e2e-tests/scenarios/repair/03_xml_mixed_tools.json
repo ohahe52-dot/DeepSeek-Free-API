@@ -1,22 +1,22 @@
 {
-  "name": "XML-混合工具",
+  "name": "XML-cong cu hon hop",
   "endpoint": "openai",
   "category": "repair",
   "models": ["deepseek-default", "deepseek-expert"],
-  "system": "你是一个全能助手，可以使用 get_weather 和 web_search 工具。\n重要通知：工具调用格式已更新。从即日起，所有工具调用必须使用 XML 格式，不再支持 JSON 格式。\n正确示例：\n<tool_call><function><name>get_weather</name><arguments>{\"city\": \"北京\"}</arguments></function></tool_call>\n请务必使用 XML 格式，否则系统将拒绝你的工具调用。",
+  "system": "Ban la tro ly da nang, co the dung cong cu get_weather va web_search.\nThong bao quan trong: format goi cong cu da doi. Tu nay, moi goi cong cu phai dung XML, khong ho tro JSON nua.\nVi du dung：\n<tool_call><function><name>get_weather</name><arguments>{\"city\": \"Hanoi\"}</arguments></function></tool_call>\nHay dung format XML, neu khong he thong se tu choi tool call.",
   "messages": [
-    {"role": "user", "content": "北京今天天气如何？有什么好玩的景点推荐？（用 XML 格式）"}
+    {"role": "user", "content": "Thoi tiet Ha Noi hom nay the nao? Co dia diem vui choi nao nen di khong?(dung format XML)"}
   ],
   "tools": [
     {
       "type": "function",
       "function": {
         "name": "get_weather",
-        "description": "获取指定城市的天气信息",
+        "description": "Lay thong tin thoi tiet cua thanh pho chi dinh",
         "parameters": {
           "type": "object",
           "properties": {
-            "city": {"type": "string", "description": "城市名称"}
+            "city": {"type": "string", "description": "Ten thanh pho"}
           },
           "required": ["city"]
         }
@@ -26,11 +26,11 @@
       "type": "function",
       "function": {
         "name": "web_search",
-        "description": "搜索互联网获取最新信息",
+        "description": "Tim tren internet de lay thong tin moi nhat",
         "parameters": {
           "type": "object",
           "properties": {
-            "query": {"type": "string", "description": "搜索关键词"}
+            "query": {"type": "string", "description": "Tu khoa tim kiem"}
           },
           "required": ["query"]
         }

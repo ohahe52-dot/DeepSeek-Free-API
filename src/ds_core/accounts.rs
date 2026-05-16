@@ -1,6 +1,6 @@
-//! 账号池管理 —— 多账号负载均衡
+//! Quản lý pool tài khoản - cân bằng tải nhiều tài khoản
 //!
-//! 1 account = 1 session = 1 concurrency。多并发需横向扩展账号数。
+//! 1 account = 1 session = 1 concurrency. Muốn nhiều concurrency thì mở rộng số tài khoản theo chiều ngang.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU8, Ordering};
@@ -15,7 +15,7 @@ use crate::config::Account as AccountConfig;
 use crate::ds_core::client::{ClientError, CompletionPayload, DsClient, LoginPayload};
 use crate::ds_core::pow::{PowError, PowSolver};
 
-/// 账号状态枚举
+/// Enum trạng thái tài khoản
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AccountState {
@@ -45,15 +45,15 @@ impl AccountState {
     }
 }
 
-/// 账号状态信息
+/// Thông tin trạng thái tài khoản
 #[derive(serde::Serialize)]
 pub struct AccountStatus {
     pub email: String,
     pub mobile: String,
     pub state: String,
-    /// 最后释放时间戳（ms），0 表示从未使用
+    /// Timestamp nhả cuối cùng (ms), 0 nghĩa là chưa từng dùng
     pub last_released_ms: i64,
-    /// 连续登录失败次数
+    /// Số lần đăng nhập thất bại liên tiếp
     pub error_count: u8,
 }
 
@@ -62,15 +62,15 @@ pub struct Account {
     email: String,
     mobile: String,
     state: AtomicU8,
-    /// 账号最近一次释放的时间戳（ms），用于冷却判断
+    /// Timestamp lần nhả tài khoản gần nhất (ms), dùng để xét cooldown
     last_released: AtomicI64,
-    /// 连续登录失败次数
+    /// Số lần đăng nhập thất bại liên tiếp
     error_count: AtomicU8,
-    /// 原始凭据（用于重新登录）
+    /// Thông tin đăng nhập gốc (dùng để đăng nhập lại)
     creds: AccountConfig,
 }
 
-/// 连续登录失败上限，达到后标记为 Invalid
+/// Giới hạn lỗi đăng nhập liên tiếp, đạt ngưỡng thì đánh dấu Invalid
 const MAX_ERROR_COUNT: u8 = 3;
 
 impl Account {
@@ -98,7 +98,7 @@ impl Account {
         self.state() == AccountState::Idle
     }
 
-    /// 创建一个 Invalid 状态的账号（初始化失败时使用，仍加入池以便前台展示）
+    /// Tạo tài khoản trạng thái Invalid (dùng khi init thất bại, vẫn thêm vào pool để frontend hiển thị)
     fn new_invalid(creds: AccountConfig) -> Self {
         Self {
             token: std::sync::RwLock::new(String::new().into()),
@@ -112,7 +112,7 @@ impl Account {
     }
 }
 
-/// 持有期间账号标记为 busy，Drop 时自动释放
+/// Khi đang giữ, tài khoản được đánh dấu busy; tự nhả khi Drop
 pub struct AccountGuard {
     account: Arc<Account>,
 }
@@ -125,7 +125,7 @@ impl AccountGuard {
 
 impl Drop for AccountGuard {
     fn drop(&mut self) {
-        // 只有 Busy 状态才释放回 Idle（避免覆盖 Error/Invalid）
+        // Chỉ nhả từ Busy về Idle (tránh ghi đè Error/Invalid)
         self.account
             .state
             .compare_exchange(
@@ -152,32 +152,32 @@ pub struct AccountPool {
 
 #[derive(Debug, thiserror::Error)]
 pub enum PoolError {
-    /// 所有账号初始化失败（没有可用账号）
-    #[error("所有账号初始化失败")]
+    /// Mọi tài khoản init thất bại (không có tài khoản khả dụng)
+    #[error("Tất cả tài khoản khởi tạo thất bại")]
     AllAccountsFailed,
 
-    /// 下游客户端错误（网络、API 错误等）
-    #[error("客户端错误: {0}")]
+    /// Lỗi client downstream (mạng, API...)
+    #[error("Lỗi client: {0}")]
     Client(#[from] ClientError),
 
-    /// PoW 计算失败（WASM 执行错误）
-    #[error("PoW 计算失败: {0}")]
+    /// Tính PoW thất bại (lỗi chạy WASM)
+    #[error("Tính PoW thất bại: {0}")]
     Pow(#[from] PowError),
 
-    /// 账号配置验证失败
-    #[error("账号配置错误: {0}")]
+    /// Kiểm tra cấu hình tài khoản thất bại
+    #[error("Lỗi cấu hình tài khoản: {0}")]
     Validation(String),
 
-    /// 账号已存在
-    #[error("账号已存在: {0}")]
+    /// Tài khoản đã tồn tại
+    #[error("Tài khoản đã tồn tại: {0}")]
     AlreadyExists(String),
 
-    /// 账号不存在
-    #[error("账号不存在: {0}")]
+    /// Tài khoản không tồn tại
+    #[error("Tài khoản không tồn tại: {0}")]
     NotFound(String),
 
-    /// 账号正在使用中，无法删除
-    #[error("账号正在使用中: {0}")]
+    /// Tài khoản đang được dùng, không thể xóa
+    #[error("Tài khoản đang được sử dụng: {0}")]
     AccountBusy(String),
 }
 
@@ -204,7 +204,7 @@ impl AccountPool {
         use std::sync::Arc;
         use tokio::sync::Semaphore;
 
-        // 限制并发初始化数，避免对 DeepSeek 端和本地连接池造成压力
+        // Giới hạn số init đồng thời để tránh gây áp lực lên DeepSeek và pool kết nối cục bộ
         let semaphore = Arc::new(Semaphore::new(13));
         let futures: Vec<_> = creds
             .into_iter()
@@ -213,7 +213,7 @@ impl AccountPool {
                 let solver = solver.clone();
                 let sem = semaphore.clone();
                 async move {
-                    let _permit = sem.acquire().await.expect("信号量未关闭");
+                    let _permit = sem.acquire().await.expect("Semaphore chưa đóng");
                     let display_id = if creds.email.is_empty() {
                         creds.mobile.clone()
                     } else {
@@ -221,12 +221,12 @@ impl AccountPool {
                     };
                     let account = match init_account(&creds, &client, &solver).await {
                         Ok(account) => {
-                            info!(target: "ds_core::accounts", "账号 {} 初始化成功", display_id);
+                            info!(target: "ds_core::accounts", "Tài khoản {} khởi tạo thành công", display_id);
                             account
                         }
                         Err(e) => {
-                            warn!(target: "ds_core::accounts", "账号 {} 初始化失败: {}", display_id, e);
-                            // 即使初始化失败也加入池，标记为 Invalid 以便前台展示
+                            warn!(target: "ds_core::accounts", "Tài khoản {} khởi tạo thất bại: {}", display_id, e);
+                            // Dù init thất bại vẫn thêm vào pool, đánh dấu Invalid để frontend hiển thị
                             Account::new_invalid(creds.clone())
                         }
                     };
@@ -247,14 +247,14 @@ impl AccountPool {
         }
 
         if idle_count == 0 {
-            warn!(target: "ds_core::accounts", "所有账号初始化失败：账号可能被禁用或凭据错误");
+            warn!(target: "ds_core::accounts", "Tất cả tài khoản khởi tạo thất bại: tài khoản có thể bị tắt hoặc thông tin đăng nhập sai");
         } else if results.len() > 1 && idle_count < results.len() {
-            warn!(target: "ds_core::accounts", "{}/{} 个账号不可用", results.len() - idle_count, results.len());
+            warn!(target: "ds_core::accounts", "{}/{} tài khoản không khả dụng", results.len() - idle_count, results.len());
         }
         Ok(())
     }
 
-    /// 动态添加账号（运行时初始化）
+    /// Thêm tài khoản động (init runtime)
     pub async fn add_account(
         &self,
         creds: &AccountConfig,
@@ -267,7 +267,7 @@ impl AccountPool {
             creds.email.clone()
         };
 
-        // 检查是否已存在（DashMap O(1) 查找）
+        // Kiểm tra đã tồn tại chưa (DashMap O(1))
         if self.accounts.contains_key(&display_id) {
             return Err(PoolError::AlreadyExists(display_id));
         }
@@ -275,11 +275,11 @@ impl AccountPool {
         let account = init_account(creds, client, solver).await?;
         let _id = account.display_id().to_string();
         self.accounts.insert(display_id.clone(), Arc::new(account));
-        info!(target: "ds_core::accounts", "动态添加账号 {} 成功", display_id);
+        info!(target: "ds_core::accounts", "Thêm động tài khoản {} thành công", display_id);
         Ok(display_id)
     }
 
-    /// 动态移除账号（仅空闲账号可移除）
+    /// Xóa tài khoản động (chỉ xóa tài khoản rảnh)
     pub async fn remove_account(&self, email_or_mobile: &str) -> Result<String, PoolError> {
         let account = self
             .accounts
@@ -290,18 +290,18 @@ impl AccountPool {
             return Err(PoolError::AccountBusy(email_or_mobile.to_string()));
         }
 
-        // 也允许移除 Error/Invalid 状态的账号
+        // Cũng cho phép xóa tài khoản trạng thái Error/Invalid
         drop(account);
         let (_, removed) = self
             .accounts
             .remove(email_or_mobile)
             .ok_or_else(|| PoolError::NotFound(email_or_mobile.to_string()))?;
         let id = removed.display_id().to_string();
-        info!(target: "ds_core::accounts", "动态移除账号 {}", id);
+        info!(target: "ds_core::accounts", "Xóa động tài khoản {}", id);
         Ok(id)
     }
 
-    /// 获取空闲最久的可用账号，带等待：无可用账号时最多等待 `timeout_ms` 毫秒
+    /// Lấy tài khoản khả dụng rảnh lâu nhất, có chờ: nếu không có tài khoản khả dụng thì chờ tối đa `timeout_ms` ms
     pub async fn get_account_with_wait(&self, timeout_ms: u64) -> Option<AccountGuard> {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
         loop {
@@ -315,10 +315,10 @@ impl AccountPool {
         }
     }
 
-    /// 获取空闲最久的可用账号（不等待，立即返回）
+    /// Lấy tài khoản khả dụng rảnh lâu nhất (không chờ, trả về ngay)
     ///
-    /// 遍历所有账号，选冷却已过且空闲时间最长的那个，最大化每次使用间隔。
-    /// DashMap 无锁读，不阻塞并发请求。
+    /// Duyệt mọi tài khoản, chọn tài khoản đã hết cooldown và rảnh lâu nhất để tối đa hóa khoảng cách giữa các lần dùng.
+    /// DashMap đọc không khóa, không chặn request đồng thời.
     pub fn get_account(&self) -> Option<AccountGuard> {
         if self.accounts.is_empty() {
             return None;
@@ -357,7 +357,7 @@ impl AccountPool {
         Some(AccountGuard { account })
     }
 
-    /// 获取所有账号的详细状态
+    /// Lấy trạng thái chi tiết của mọi tài khoản
     pub fn account_statuses(&self) -> Vec<AccountStatus> {
         self.accounts
             .iter()
@@ -374,20 +374,20 @@ impl AccountPool {
             .collect()
     }
 
-    /// 优雅关闭（新流程无持久 session，无需清理）
+    /// Tắt an toàn (luồng mới không có session bền vững, không cần dọn)
     pub async fn shutdown(&self, _client: &DsClient) {}
 
-    /// 存储 client 和 solver 供恢复任务使用
+    /// Lưu client và solver cho tác vụ khôi phục
     pub async fn set_client_solver(&self, client: DsClient, solver: PowSolver) {
         *self.client.write().await = Some(client);
         *self.solver.write().await = Some(solver);
     }
 
-    /// 标记账号为 Error 状态（请求失败时调用）
+    /// Đánh dấu tài khoản sang trạng thái Error (gọi khi request thất bại)
     pub fn mark_error(&self, email_or_mobile: &str) {
         if let Some(entry) = self.accounts.get(email_or_mobile) {
             let account = entry.value();
-            // 只从 Busy 转到 Error（避免覆盖 Invalid）
+            // Chỉ chuyển từ Busy sang Error (tránh ghi đè Invalid)
             account
                 .state
                 .compare_exchange(
@@ -397,58 +397,61 @@ impl AccountPool {
                     Ordering::Relaxed,
                 )
                 .ok();
-            warn!(target: "ds_core::accounts", "账号 {} 标记为 Error", account.display_id());
+            warn!(target: "ds_core::accounts", "Đánh dấu tài khoản {} là Error", account.display_id());
         }
     }
 
-    /// 手动重新登录指定账号（管理员触发）
-    /// 成功 → Idle，失败 → error_count++，≥3 则 Invalid
+    /// Đăng nhập lại thủ công tài khoản chỉ định (admin kích hoạt)
+    /// Thành công -> Idle, thất bại -> error_count++, >=3 thì Invalid
     pub async fn re_login_single(&self, email_or_mobile: &str) -> Result<(), String> {
         let client_opt = self.client.read().await.clone();
         let solver_opt = self.solver.read().await.clone();
         let (Some(client), Some(solver)) = (client_opt, solver_opt) else {
-            return Err("client/solver 未初始化".to_string());
+            return Err("client/solver chưa được khởi tạo".to_string());
         };
 
         let account = self
             .accounts
             .get(email_or_mobile)
-            .ok_or_else(|| format!("账号 {} 不存在", email_or_mobile))?;
+            .ok_or_else(|| format!("Tài khoản {} không tồn tại", email_or_mobile))?;
         let account = account.value();
 
-        // 只允许 Error/Invalid 状态的账号重登
+        // Chỉ cho phép đăng nhập lại tài khoản trạng thái Error/Invalid
         let state = account.state();
         if state != AccountState::Error && state != AccountState::Invalid {
             return Err(format!(
-                "账号状态为 {}，仅 Error/Invalid 可重登",
+                "Trạng thái tài khoản là {}, chỉ Error/Invalid mới được đăng nhập lại",
                 state.as_str()
             ));
         }
 
         Self::re_login_account(account, &client, &solver).await;
 
-        // 检查重登后状态
+        // Kiểm tra trạng thái sau đăng nhập lại
         let new_state = account.state();
         if new_state == AccountState::Idle {
             Ok(())
         } else {
-            Err(format!("重登失败，当前状态: {}", new_state.as_str()))
+            Err(format!(
+                "Đăng nhập lại thất bại, trạng thái hiện tại: {}",
+                new_state.as_str()
+            ))
         }
     }
 
-    /// 尝试重新登录 Error 状态的账号
-    /// 成功 → Idle，失败 → error_count++，≥3 则 Invalid
+    /// Thử đăng nhập lại tài khoản trạng thái Error
+    /// Thành công -> Idle, thất bại -> error_count++, >=3 thì Invalid
     async fn re_login_account(account: &Account, client: &DsClient, solver: &PowSolver) {
         let display_id = account.display_id().to_string();
         match try_init_account(&account.creds, client, solver).await {
             Ok(new_account) => {
-                // 更新 token
+                // Cập nhật token
                 *account.token.write().unwrap() = new_account.token.read().unwrap().clone();
                 account
                     .state
                     .store(AccountState::Idle as u8, Ordering::Relaxed);
                 account.error_count.store(0, Ordering::Relaxed);
-                info!(target: "ds_core::accounts", "账号 {} 重新登录成功", display_id);
+                info!(target: "ds_core::accounts", "Tài khoản {} đăng nhập lại thành công", display_id);
             }
             Err(e) => {
                 let count = account.error_count.fetch_add(1, Ordering::Relaxed) + 1;
@@ -456,15 +459,15 @@ impl AccountPool {
                     account
                         .state
                         .store(AccountState::Invalid as u8, Ordering::Relaxed);
-                    error!(target: "ds_core::accounts", "账号 {} 连续 {} 次重登失败，标记为 Invalid: {}", display_id, count, e);
+                    error!(target: "ds_core::accounts", "Tài khoản {} đăng nhập lại thất bại liên tiếp {} lần, đánh dấu Invalid: {}", display_id, count, e);
                 } else {
-                    warn!(target: "ds_core::accounts", "账号 {} 重登失败 ({}次): {}", display_id, count, e);
+                    warn!(target: "ds_core::accounts", "Tài khoản {} đăng nhập lại thất bại ({} lần): {}", display_id, count, e);
                 }
             }
         }
     }
 
-    /// 启动后台恢复任务：每 60 秒扫描 Error 账号并尝试重新登录
+    /// Khởi động tác vụ khôi phục nền: quét tài khoản Error mỗi 60 giây và thử đăng nhập lại
     pub fn start_recovery_task(self: &Arc<Self>) {
         let pool = Arc::clone(self);
         tokio::spawn(async move {
@@ -501,10 +504,10 @@ async fn try_init_account(
     client: &DsClient,
     solver: &PowSolver,
 ) -> Result<Account, PoolError> {
-    // 验证：email 和 mobile 至少一个非空
+    // Kiểm tra: email và mobile phải có ít nhất một giá trị
     if creds.email.is_empty() && creds.mobile.is_empty() {
         return Err(PoolError::Validation(
-            "email 和 mobile 不能同时为空".to_string(),
+            "email và mobile không được đồng thời để trống".to_string(),
         ));
     }
 
@@ -532,7 +535,7 @@ async fn try_init_account(
     let login_data = client.login(&login_payload).await?;
     debug!(
         target: "ds_core::client",
-        "登录响应: code={}, msg={}, user_id={}, email={:?}, mobile={:?}",
+        "Phản hồi đăng nhập: code={}, msg={}, user_id={}, email={:?}, mobile={:?}",
         login_data.code,
         login_data.msg,
         login_data.user.id,
@@ -547,10 +550,10 @@ async fn try_init_account(
         &creds.email
     };
 
-    // 健康检查：创建临时 session → 发送 test completion → 删除 session
+    // Health check: tạo session tạm -> gửi test completion -> xóa session
     let session_id = client.create_session(&token).await?;
     if let Err(e) = health_check(&token, &session_id, client, solver, "default", display_id).await {
-        // 即使健康检查失败也要清理 session
+        // Dù health check thất bại cũng phải dọn session
         let _ = client.delete_session(&token, &session_id).await;
         return Err(e);
     }
@@ -587,7 +590,7 @@ async fn health_check(
         chat_session_id: session_id.to_string(),
         parent_message_id: None,
         model_type: model_type.to_string(),
-        prompt: "只回复`Hello, world!`".to_string(),
+        prompt: "Chỉ trả lời `Hello, world!`".to_string(),
         ref_file_ids: vec![],
         thinking_enabled: false,
         search_enabled: false,
@@ -595,7 +598,7 @@ async fn health_check(
     };
 
     let mut stream = client.completion(token, &pow_header, &payload).await?;
-    // 消费流并检查是否收到正常 SSE（健康账号应有 ready/response 事件）
+    // Tiêu thụ stream và kiểm tra có nhận SSE bình thường không (tài khoản khỏe phải có event ready/response)
     let mut data = Vec::new();
     while let Some(chunk) = stream.try_next().await? {
         data.extend_from_slice(&chunk);
@@ -603,25 +606,29 @@ async fn health_check(
 
     let text = String::from_utf8_lossy(&data);
 
-    // 检测账号是否异常（muted / 限流等）
+    // Phát hiện tài khoản bất thường (muted / rate limit...)
     if text.contains(r#""biz_code":"#) {
         error!(
             target: "ds_core::accounts",
-            "health_check 检测到业务错误: account={}, response={}",
+            "health_check phát hiện lỗi nghiệp vụ: account={}, response={}",
             display_id,
             text.lines().find(|l| l.contains("biz_code")).unwrap_or(&text)
         );
-        return Err(PoolError::Validation("账号异常(muted/limited)".into()));
+        return Err(PoolError::Validation(
+            "Tài khoản bất thường (muted/limited)".into(),
+        ));
     }
 
-    // 检查 SSE 流是否正常结束
+    // Kiểm tra stream SSE có kết thúc bình thường không
     if !text.contains(r#""FINISHED""#) && !text.contains(r#""INCOMPLETE""#) {
-        return Err(PoolError::Validation("SSE 流未正常结束".into()));
+        return Err(PoolError::Validation(
+            "Stream SSE không kết thúc bình thường".into(),
+        ));
     }
 
     debug!(
         target: "ds_core::accounts",
-        "health_check 完成 model_type={} account={} elapsed={:?}",
+        "health_check hoàn tất model_type={} account={} elapsed={:?}",
         model_type, display_id, start.elapsed()
     );
     Ok(())

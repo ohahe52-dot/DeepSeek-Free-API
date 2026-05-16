@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/github/last-commit/NIyueeE/ds-free-api.svg">
 </p>
 
-[中文](README.md)
+[Tiếng Việt](README.md)
 
 A Rust API proxy that translates DeepSeek's free web chat into standard OpenAI and Anthropic-compatible API protocols (supports chat completions and messages, including streaming and tool calling).
 

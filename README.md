@@ -18,27 +18,26 @@
 
 [English](README.en.md)
 
-将免费的 DeepSeek 网页端对话反代并适配转换为标准的 OpenAI 与 Anthropic 兼容 API 协议（目前支持 chat completions 和 messages，包括流式返回与工具调用）。
+Reverse proxy cuộc trò chuyện miễn phí trên Web DeepSeek và chuyển đổi sang giao thức API tương thích OpenAI và Anthropic chuẩn. Hiện hỗ trợ `chat completions` và `messages`, gồm phản hồi streaming và gọi công cụ.
 
-## 项目亮点
+## Điểm nổi bật
 
-- **零成本 API 代理**：使用 DeepSeek 免费网页端，无需官方 API Key，即可获得 OpenAI / Anthropic 兼容接口
-- **双协议支持**：同时兼容 OpenAI Chat Completions 与 Anthropic Messages API，主流客户端即插即用
-- **工具调用就绪**：OpenAI function calling 完整实现，工具解析 + 三层自修复管道（文本修复 → JSON 修复 → 模型兜底），覆盖 10+ 异常格式
-- **文件上传就绪**：支持 OpenAI `file` / `image_url` content part 和 Anthropic `image` / `document` content block 的内联 data URL 文件自动上传到 DeepSeek 会话；
-  HTTP URL 自动触发搜索模式，模型可直接访问链接内容
-- **Web 管理面板**：内置可视化面板，账号池状态、API Key 管理、请求日志、配置热重载，开箱即用
-- **Rust 实现**：单可执行文件 + 单 TOML 配置，跨平台原生高性能（Web 面板编译时嵌入，开箱即用）
-- **多账号池**：空闲最久优先轮转（DashMap 无锁读），支持水平扩展并发
+- **Proxy API không tốn phí**: dùng giao diện Web miễn phí của DeepSeek, không cần API Key chính thức, vẫn có endpoint tương thích OpenAI / Anthropic.
+- **Hỗ trợ hai giao thức**: tương thích OpenAI Chat Completions và Anthropic Messages API, dùng được với nhiều client phổ biến.
+- **Sẵn sàng gọi công cụ**: triển khai OpenAI function calling, gồm parser công cụ và pipeline tự sửa 3 tầng (sửa text → sửa JSON → model sửa dự phòng), phủ hơn 10 định dạng lỗi.
+- **Sẵn sàng tải tệp**: hỗ trợ tự tải lên DeepSeek session với OpenAI `file` / `image_url` content part và Anthropic `image` / `document` content block dạng data URL nội tuyến. HTTP URL tự bật chế độ tìm kiếm để model truy cập nội dung liên kết.
+- **Bảng quản trị Web**: có giao diện xem trạng thái nhóm tài khoản, quản lý API Key, nhật ký yêu cầu, nạp nóng cấu hình.
+- **Triển khai Rust**: một file thực thi + một TOML cấu hình, hiệu năng native đa nền tảng. Bảng Web được nhúng khi build.
+- **Nhóm nhiều tài khoản**: xoay vòng ưu tiên tài khoản rảnh lâu nhất (DashMap đọc không khóa), hỗ trợ mở rộng song song.
 
-## 快速开始
+## Bắt đầu nhanh
 
-### 二进制使用
+### Chạy bằng binary
 
-1. 从 [releases](https://github.com/NIyueeE/ds-free-api/releases) 下载对应平台压缩包并解压
-2. 复制 `config.example.toml` 为 `config.toml` 并填入账号 (可选, 也可启动后在管理面板中配置)
-3. 运行 `./ds-free-api`
-4. 访问 `http://127.0.0.1:22217/admin` 设置管理密码，之后可在面板中创建 API Key 和管理账号
+1. Tải gói đúng nền tảng từ [releases](https://github.com/NIyueeE/ds-free-api/releases) rồi giải nén.
+2. Sao chép `config.example.toml` thành `config.toml` và điền tài khoản. Có thể bỏ qua bước này rồi thêm tài khoản trong bảng quản trị sau khi chạy.
+3. Chạy `./ds-free-api`.
+4. Mở `http://127.0.0.1:22217/admin`, đặt mật khẩu quản trị, sau đó tạo API Key và quản lý tài khoản trong bảng điều khiển.
 
 ```bash
 ./ds-free-api
@@ -46,144 +45,145 @@
 RUST_LOG=debug ./ds-free-api
 ```
 
-> **并发**：免费 API 有 session 级速率限制。本项目内置限流检测 + 指数退避重试，确保稳定。
-> 推荐并行数 = 账号数 / 2。支持无 config.toml 启动后通过管理面板添加账号。
+> **Song song**: API miễn phí có giới hạn tốc độ theo session. Dự án có phát hiện giới hạn + retry backoff hàm mũ để giữ ổn định.
+> Số luồng khuyến nghị = số tài khoản / 2. Có thể khởi động không cần `config.toml`, rồi thêm tài khoản trong bảng quản trị.
 
-### Docker 使用
+### Chạy bằng Docker
 
 ```bash
 docker compose -f docker-compose.yaml up -d
 ```
 
-可以参考[示例compose文件](./docker/docker-compose.yaml)
+Tham khảo [file compose ví dụ](./docker/docker-compose.yaml).
 
-管理面板在 `http://localhost:22217/admin`，首次访问设置管理密码。
-`config/` 和 `data/` 目录通过 bind mount 挂载到容器内，配置修改自动持久化到宿主机。
+Bảng quản trị ở `http://localhost:22217/admin`, lần đầu truy cập sẽ đặt mật khẩu quản trị.
+Thư mục `config/` và `data/` được bind mount vào container, thay đổi cấu hình sẽ tự lưu bền về máy host.
 
-### 免费测试账号
+### Tài khoản thử miễn phí
 
-~~以下账号密码统一为 `test12345`：~~
+~~Các tài khoản dưới đây từng dùng chung mật khẩu `test12345`:~~
 
 ```text
-不太稳定, 这里不再提供, 请自行注册
+Không ổn định, phần này không còn cung cấp. Hãy tự đăng ký.
 ```
 
-> 可以参考[issue #62](https://github.com/NIyueeE/ds-free-api/issues/62)的方法
+> Có thể tham khảo cách trong [issue #62](https://github.com/NIyueeE/ds-free-api/issues/62).
 
-## API 端点
+## Endpoint API
 
-| 方法 | 路径 | 说明 |
+| Phương thức | Đường dẫn | Mô tả |
 |------|------|------|
-| GET  | `/`   | 重定向到管理面板 |
-| GET  | `/health` | 健康检查 |
-| POST | `/v1/chat/completions` | 聊天补全（支持流式与工具调用） |
-| GET  | `/v1/models` | 模型列表 |
-| GET  | `/v1/models/{id}` | 模型详情 |
-| POST | `/anthropic/v1/messages` | Anthropic Messages（支持流式与工具调用） |
-| GET  | `/anthropic/v1/models` | 模型列表（Anthropic 格式） |
-| GET  | `/anthropic/v1/models/{id}` | 模型详情（Anthropic 格式） |
+| GET  | `/`   | Chuyển hướng sang bảng quản trị |
+| GET  | `/health` | Kiểm tra sức khỏe |
+| POST | `/v1/chat/completions` | Chat completions, hỗ trợ streaming và gọi công cụ |
+| GET  | `/v1/models` | Danh sách mô hình |
+| GET  | `/v1/models/{id}` | Chi tiết mô hình |
+| POST | `/anthropic/v1/messages` | Anthropic Messages, hỗ trợ streaming và gọi công cụ |
+| GET  | `/anthropic/v1/models` | Danh sách mô hình theo định dạng Anthropic |
+| GET  | `/anthropic/v1/models/{id}` | Chi tiết mô hình theo định dạng Anthropic |
 
-管理面板位于 `/admin`，首次访问引导设置管理密码。
-## 模型映射
+Bảng quản trị nằm tại `/admin`, lần đầu truy cập sẽ hướng dẫn đặt mật khẩu quản trị.
 
-`config.toml` 中 `model_types`（默认 `["default", "expert"]`）自动映射：
+## Ánh xạ mô hình
 
-| OpenAI 模型 ID     | DeepSeek 类型 |
+`model_types` trong `config.toml` (mặc định `["default", "expert"]`) được tự ánh xạ:
+
+| OpenAI model ID | Loại DeepSeek |
 | ------------------ | ------------- |
-| `deepseek-default` | 快速模式      |
-| `deepseek-expert`  | 专家模式      |
+| `deepseek-default` | Chế độ nhanh |
+| `deepseek-expert`  | Chế độ chuyên gia |
 
-可选别名通过 `model_aliases` 按 index 对齐 `model_types`，默认无别名。空字符串被跳过：
+Bí danh tùy chọn dùng `model_aliases`, căn theo index với `model_types`. Mặc định không có bí danh. Chuỗi rỗng bị bỏ qua:
 
 ```toml
-# model_aliases = ["", "deepseek-v4-pro"]  → deepseek-v4-pro 映射到 expert（index 1）
+# model_aliases = ["", "deepseek-v4-pro"]  -> deepseek-v4-pro ánh xạ tới expert (index 1)
 model_aliases = []
 ```
-Anthropic 兼容层使用相同的模型 ID，通过 `/anthropic/v1/messages` 调用。
 
-### 能力开关
+Lớp tương thích Anthropic dùng cùng model ID qua `/anthropic/v1/messages`.
 
-- **深度思考**：默认已开启。如需显式关闭，请求体中加 `"reasoning_effort": "none"`。
-- **智能搜索**：默认已开启（DeepSeek 后端在搜索模式下会注入更强的系统提示词，提升工具调用遵循度）。如需显式关闭，请求体 中加 `"web_search_options": {"search_context_size": "none"}`。
-- **文件上传**：支持内联文件（data URL）自动上传到 DeepSeek 会话，以及 HTTP URL 自动触发搜索模式：
+### Công tắc năng lực
 
-  **OpenAI 端：**
+- **Suy luận sâu**: bật mặc định. Để tắt rõ ràng, thêm `"reasoning_effort": "none"` vào body yêu cầu.
+- **Tìm kiếm thông minh**: bật mặc định. DeepSeek backend sẽ tiêm prompt hệ thống mạnh hơn khi ở chế độ tìm kiếm, giúp model tuân thủ gọi công cụ tốt hơn. Để tắt rõ ràng, thêm `"web_search_options": {"search_context_size": "none"}` vào body.
+- **Tải tệp**: hỗ trợ tệp nội tuyến (data URL) tự tải lên DeepSeek session và HTTP URL tự bật chế độ tìm kiếm:
+
+  **OpenAI:**
   ```json
   {"type": "file", "file": {"file_data": "data:text/plain;base64,...", "filename": "doc.txt"}}
   {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
-  {"type": "image_url", "image_url": {"url": "https://example.com/img.jpg"}}  {" "}
+  {"type": "image_url", "image_url": {"url": "https://example.com/img.jpg"}}
   ```
 
-  **Anthropic 端：**
+  **Anthropic:**
   ```json
   {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "..."}}
   {"type": "document", "source": {"type": "base64", "media_type": "text/plain", "data": "..."}}
   {"type": "image", "source": {"type": "url", "url": "https://example.com/img.jpg"}}
   ```
 
-### 工具调用标签幻觉
+### Ảo giác thẻ gọi công cụ
 
-内置模糊匹配（全角 `｜`<=>`|`、`▁`<=>`_`），自动覆盖大多数变体。若模型输出格式不同的回退标签，可在控制面板中添加, 或者在 `config.toml` 的 `[deepseek]` 下追加：
+Khớp mờ tích hợp (`｜`<=>`|`, `▁`<=>`_`) tự phủ đa số biến thể. Nếu model sinh thẻ dự phòng có định dạng khác, có thể thêm trong bảng điều khiển hoặc thêm dưới `[deepseek]` trong `config.toml`:
 
 ```toml
 tool_call.extra_starts = ["<|tool_call_begin|>", "<tool_calls>", "<tool_call>"]
 tool_call.extra_ends = ["<|tool_call_end|>", "</tool_calls>", "</tool_call>"]
 ```
 
-## Web 管理面板
+## Bảng quản trị Web
 
-启动服务后访问 `http://127.0.0.1:22217/admin` 即可进入管理面板：
+Sau khi chạy dịch vụ, mở `http://127.0.0.1:22217/admin` để vào bảng quản trị:
 
-- **概览**：请求统计、账号池状态一览
-- **账号池**：查看/添加/移除账号，手动重新登录 Error 状态账号
-- **API Keys**：创建/删除 API Key，脱敏展示
-- **模型**：可用模型列表与详情
-- **配置**：当前运行配置（脱敏）
-- **日志**：最近请求日志与运行时日志
+- **Tổng quan**: thống kê yêu cầu và trạng thái nhóm tài khoản.
+- **Nhóm tài khoản**: xem/thêm/xóa tài khoản, đăng nhập lại thủ công tài khoản đang ở trạng thái Error.
+- **API Keys**: tạo/xóa API Key, hiển thị đã che bớt.
+- **Mô hình**: danh sách và chi tiết mô hình khả dụng.
+- **Cấu hình**: cấu hình đang chạy, đã che dữ liệu nhạy cảm.
+- **Nhật ký**: nhật ký yêu cầu gần đây và nhật ký runtime.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/NIyueeE/ds-free-api/main/assets/web_p1.png" alt="管理面板概览" width="700">
+  <img src="https://raw.githubusercontent.com/NIyueeE/ds-free-api/main/assets/web_p1.png" alt="Tổng quan bảng quản trị" width="700">
   <br>
-  <em>管理面板概览（Dashboard）</em>
+  <em>Tổng quan bảng quản trị (Dashboard)</em>
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/NIyueeE/ds-free-api/main/assets/web_p2.png" alt="配置界面" width="700">
+  <img src="https://raw.githubusercontent.com/NIyueeE/ds-free-api/main/assets/web_p2.png" alt="Màn hình cấu hình" width="700">
   <br>
-  <em>配置界面（Config）</em>
+  <em>Màn hình cấu hình (Config)</em>
 </p>
 
-首次访问时引导设置管理密码（bcrypt 哈希存储），登录后签发 JWT（24h 有效），支持密码重置时吊销旧 Token。
+Lần đầu truy cập sẽ đặt mật khẩu quản trị (lưu bằng bcrypt hash). Sau khi đăng nhập, hệ thống cấp JWT hiệu lực 24 giờ và thu hồi token cũ khi đổi mật khẩu.
 
-## 环境变量
+## Biến môi trường
 
-| 变量 | 默认值 | 说明 |
+| Biến | Mặc định | Mô tả |
 |------|--------|------|
-| `RUST_LOG` | `info` | 日志级别（`trace` / `debug` / `info` / `warn` / `error`） |
-| `DS_DATA_DIR` | `.`（当前目录） | 数据目录，存放 `logs/runtime.log` 和 `stats.json` |
-| `DS_CONFIG_PATH` | `./config.toml` | 配置文件路径，优先级低于 `-c` 参数 |
+| `RUST_LOG` | `info` | Mức log (`trace` / `debug` / `info` / `warn` / `error`) |
+| `DS_DATA_DIR` | `.` (thư mục hiện tại) | Thư mục dữ liệu, chứa `logs/runtime.log` và `stats.json` |
+| `DS_CONFIG_PATH` | `./config.toml` | Đường dẫn tệp cấu hình, ưu tiên thấp hơn tham số `-c` |
 
-## 安全
+## Bảo mật
 
-- **管理面板**：JWT 认证 + bcrypt 密码哈希 + 登录失败率限制（5 次失败锁定 5 分钟）
-- **API 访问**：通过管理面板创建的 API Key 鉴权（HashSet O(1) 查找）
-- **CORS**：可配置允许的 Origin 列表，默认仅 `http://localhost:22217`
-- **敏感信息**：账号 ID 在响应头中脱敏，请求体不记录日志，持久化文件权限 0600
+- **Bảng quản trị**: JWT auth + bcrypt password hash + giới hạn đăng nhập sai (5 lần sai khóa 5 phút).
+- **Truy cập API**: xác thực bằng API Key tạo trong bảng quản trị (HashSet O(1)).
+- **CORS**: cấu hình được danh sách Origin cho phép, mặc định chỉ `http://localhost:22217`.
+- **Dữ liệu nhạy cảm**: ID tài khoản trong response header được che bớt, body yêu cầu không ghi log, file lưu bền đặt quyền 0600.
 
-## 开发
+## Phát triển
 
-### 设计哲学
+### Triết lý thiết kế
 
-**一个 `config.toml` 反映所有运行状态**。管理面板对配置的修改即时持久化到 `config.toml`，同时热重载到运行中的服务。
+**Một `config.toml` phản ánh toàn bộ trạng thái chạy**. Thay đổi từ bảng quản trị được ghi ngay vào `config.toml` và nạp nóng vào dịch vụ đang chạy.
 
-**非必要不引入额外运行时系统依赖**。项目始终优先选择纯 Rust 或静态链接的依赖（如 `rustls` → `wreq` + BoringSSL），确保编译产物单一二进制无外部 `.so`/`.dll` 依赖，下载即用。
+**Không thêm phụ thuộc runtime hệ thống nếu không cần**. Dự án ưu tiên Rust thuần hoặc phụ thuộc liên kết tĩnh (như `wreq` + BoringSSL) để artifact build là một binary duy nhất, không cần `.so`/`.dll` ngoài.
 
-
-### 简要架构图：
+### Sơ đồ kiến trúc ngắn gọn
 
 ```mermaid
 flowchart TB
-    %% ===== 主题定义 =====
+    %% ===== Chủ đề =====
     classDef client fill:#eff6ff,stroke:#3b82f6,stroke-width:3px,color:#1d4ed8,rx:14,ry:14
     classDef gateway fill:#fffbeb,stroke:#f59e0b,stroke-width:3px,color:#92400e,rx:12,ry:12
     classDef openai_adapter fill:#f8fafc,stroke:#0a9e7b,stroke-width:2px,color:#334155,rx:10,ry:10
@@ -191,53 +191,50 @@ flowchart TB
     classDef ds_core fill:#f8fafc,stroke:#3964fe,stroke-width:2px,color:#1e40af,rx:10,ry:10
     classDef external fill:#fef2f2,stroke:#ef4444,stroke-width:3px,color:#991b1b,rx:6,ry:6
 
-    %% ===== 节点 =====
-    Client(["🖥️ 客户端"]):::client
+    Client(["🖥️ Client"]):::client
 
-    subgraph GW ["🌐 HTTP 接入层"]
-        Handler(["路由 / 鉴权 / 序列化"]):::gateway
+    subgraph GW ["🌐 Lớp HTTP"]
+        Handler(["Route / Auth / Serialize"]):::gateway
     end
 
-    subgraph PL ["⚙️ 协议处理层"]
+    subgraph PL ["⚙️ Lớp xử lý giao thức"]
         direction TB
 
-        subgraph AC ["Anthropic 兼容层"]
-            A2O["请求转换<br/>Anthropic → OpenAI"]:::anthropic_compat
-            O2A["响应转换<br/>OpenAI → Anthropic"]:::anthropic_compat
+        subgraph AC ["Lớp tương thích Anthropic"]
+            A2O["Chuyển yêu cầu<br/>Anthropic -> OpenAI"]:::anthropic_compat
+            O2A["Chuyển phản hồi<br/>OpenAI -> Anthropic"]:::anthropic_compat
         end
 
-        subgraph OA ["OpenAI 适配层"]
-            ReqPipe["请求管道<br/>校验 / 工具提取 / 提示词构建"]:::openai_adapter
-            RespPipe["响应管道<br/>SSE 解析 / 格式转换 / 工具修复"]:::openai_adapter
+        subgraph OA ["Lớp adapter OpenAI"]
+            ReqPipe["Pipeline yêu cầu<br/>Validate / Tách công cụ / Dựng prompt"]:::openai_adapter
+            RespPipe["Pipeline phản hồi<br/>Parse SSE / Chuyển định dạng / Sửa công cụ"]:::openai_adapter
         end
     end
 
-    subgraph CL ["🔧 核心层 (ds_core)"]
-        Pool["账号池轮转"]:::ds_core
-        PoW["PoW 求解"]:::ds_core
-        Session["会话编排<br/>创建销毁 / 历史上传"]:::ds_core
+    subgraph CL ["🔧 Lớp lõi (ds_core)"]
+        Pool["Xoay vòng nhóm tài khoản"]:::ds_core
+        PoW["Giải PoW"]:::ds_core
+        Session["Điều phối session<br/>Tạo hủy / Tải lịch sử"]:::ds_core
     end
 
     DeepSeek[("🔴 DeepSeek API")]:::external
 
-    %% ===== 连接 =====
-    Client -->|"HTTP 请求"| Handler
+    Client -->|"HTTP request"| Handler
 
-    Handler -->|"OpenAI 请求结构体"| ReqPipe
-    Handler -->|"Anthropic 请求结构体"| A2O
-    A2O -->|"OpenAI 请求结构体"| ReqPipe
+    Handler -->|"OpenAI request struct"| ReqPipe
+    Handler -->|"Anthropic request struct"| A2O
+    A2O -->|"OpenAI request struct"| ReqPipe
 
     ReqPipe --> Pool
     Pool --> PoW
     PoW --> Session
-    Session -->|"completion 端点"| DeepSeek
+    Session -->|"completion endpoint"| DeepSeek
 
-    Session -.->|"DeepSeek SSE数据流"| RespPipe
-    RespPipe -.->|"OpenAI 响应结构体"| Handler
-    RespPipe -.->|"OpenAI 响应结构体"| O2A
-    O2A -.->|"Anthropic 响应结构体"| Handler
+    Session -.->|"DeepSeek SSE stream"| RespPipe
+    RespPipe -.->|"OpenAI response struct"| Handler
+    RespPipe -.->|"OpenAI response struct"| O2A
+    O2A -.->|"Anthropic response struct"| Handler
 
-    %% ===== 子图样式 =====
     style GW fill:#fffbeb,stroke:#f59e0b,stroke-width:2px,stroke-dasharray: 5 5
     style PL fill:#fafafa,stroke:#94a3b8,stroke-width:2px
     style AC fill:#fdf0ec,stroke:#d07354,stroke-width:2px
@@ -245,45 +242,44 @@ flowchart TB
     style CL fill:#eef2ff,stroke:#3964fe,stroke-width:2px,stroke-dasharray: 5 5
 ```
 
-### 数据管道：
+### Pipeline dữ liệu
 
-#### OpenAI (chat_completions) 处理管道:
+#### Pipeline OpenAI (`chat_completions`)
 
 ```mermaid
 flowchart TB
-    %% ===== 主题定义 =====
     classDef ds_core fill:#eef2ff,stroke:#3964fe,stroke-width:2.5px,color:#1e40af,rx:10,ry:10
     classDef openai_adapter fill:#e6f7f3,stroke:#0a9e7b,stroke-width:2.5px,color:#065f46,rx:10,ry:10
     classDef step fill:#fffbeb,stroke:#f59e0b,stroke-width:1.5px,color:#334155,rx:6,ry:6
 
-    subgraph RQ ["请求处理"]
+    subgraph RQ ["Xử lý yêu cầu"]
         direction TB
         Q1["ChatCompletionsRequest"]:::openai_adapter
-        Q2["参数校验 + 默认值"]:::step
-        Q3["工具/文件提取 + 注入提示词"]:::step
-        Q4["DeepSeek 原生标签提示词构建"]:::step
-        Q5["模型映射 + 能力开关"]:::step
-        Q6["限流重试<br/>指数退避 1s→2s→4s→8s→16s"]:::step
+        Q2["Validate tham số + mặc định"]:::step
+        Q3["Tách công cụ/tệp + tiêm prompt"]:::step
+        Q4["Dựng prompt thẻ gốc DeepSeek"]:::step
+        Q5["Ánh xạ mô hình + công tắc năng lực"]:::step
+        Q6["Retry giới hạn tốc độ<br/>Backoff 1s->2s->4s->8s->16s"]:::step
         Q7["ChatRequest"]:::ds_core
     end
 
-    subgraph RS1 ["非流式响应"]
+    subgraph RS1 ["Phản hồi không streaming"]
         direction TB
-        OR1["ds_core SSE 流"]:::ds_core
-        OR2["SSE 帧解析<br/>ContentDelta / Usage"]:::step
-        OR3["状态机重组<br/>合并连续文本 / 累积 usage"]:::step
-        OR4["chunk 聚合<br/>拼接 content / reasoning / tool_calls"]:::step
+        OR1["ds_core SSE stream"]:::ds_core
+        OR2["Parse frame SSE<br/>ContentDelta / Usage"]:::step
+        OR3["Gom bằng state machine<br/>Gộp text liền kề / Tích lũy usage"]:::step
+        OR4["Tổng hợp chunk<br/>Nối content / reasoning / tool_calls"]:::step
         OR5["ChatCompletionsResponse"]:::openai_adapter
     end
 
-    subgraph RS2 ["流式响应"]
+    subgraph RS2 ["Phản hồi streaming"]
         direction TB
-        OS1["ds_core SSE 流"]:::ds_core
-        OS2["SSE 帧解析 + 状态机"]:::step
-        OS3["Chunk 转换<br/>DsFrame → ChatCompletionsResponseChunk"]:::step
-        OS4["工具调用 XML 解析"]:::step
-        OS5["异常工具调用自修复"]:::step
-        OS6["stop 序列检测 + obfuscation"]:::step
+        OS1["ds_core SSE stream"]:::ds_core
+        OS2["Parse SSE + state machine"]:::step
+        OS3["Chuyển chunk<br/>DsFrame -> ChatCompletionsResponseChunk"]:::step
+        OS4["Parse XML gọi công cụ"]:::step
+        OS5["Tự sửa gọi công cụ lỗi"]:::step
+        OS6["Phát hiện stop sequence + obfuscation"]:::step
         OS7["ChatCompletionsResponseChunk"]:::openai_adapter
     end
 
@@ -296,37 +292,36 @@ flowchart TB
     style RS2 fill:#f8fafc,stroke:#0a9e7b,stroke-width:2px
 ```
 
-#### Anthropic (messages) 处理管道:
+#### Pipeline Anthropic (`messages`)
 
 ```mermaid
 flowchart TB
-    %% ===== 主题定义 =====
     classDef oai fill:#e6f7f3,stroke:#0a9e7b,stroke-width:2.5px,color:#065f46,rx:10,ry:10
     classDef anth fill:#fdf0ec,stroke:#d07354,stroke-width:2.5px,color:#7c3a2a,rx:10,ry:10
     classDef step fill:#fffbeb,stroke:#f59e0b,stroke-width:1.5px,color:#334155,rx:6,ry:6
 
-    subgraph RQ ["请求处理"]
+    subgraph RQ ["Xử lý yêu cầu"]
         direction TB
         Q1["MessagesRequest"]:::anth
-        Q2["消息展开<br/>System 前置 / 文本合并 / 图片/文档映射"]:::step
-        Q3["工具映射<br/>ToolUnion → OpenAI Tool"]:::step
-        Q4["能力开关映射<br/>thinking → reasoning_effort"]:::step
+        Q2["Mở rộng message<br/>Đưa System lên đầu / Gộp text / Map ảnh-tài liệu"]:::step
+        Q3["Map công cụ<br/>ToolUnion -> OpenAI Tool"]:::step
+        Q4["Map công tắc năng lực<br/>thinking -> reasoning_effort"]:::step
         Q5["ChatCompletionsRequest"]:::oai
     end
 
-    subgraph RS3 ["非流式响应"]
+    subgraph RS3 ["Phản hồi không streaming"]
         direction TB
         AR1["ChatCompletionsResponse"]:::oai
-        AR2["Content 拆解<br/>reasoning → Thinking<br/>content → Text<br/>tool_calls → ToolUse"]:::step
-        AR3["ID 映射<br/>chatcmpl → msg<br/>call → toolu"]:::step
+        AR2["Tách Content<br/>reasoning -> Thinking<br/>content -> Text<br/>tool_calls -> ToolUse"]:::step
+        AR3["Map ID<br/>chatcmpl -> msg<br/>call -> toolu"]:::step
         AR4["MessagesResponse"]:::anth
     end
 
-    subgraph RS4 ["流式响应"]
+    subgraph RS4 ["Phản hồi streaming"]
         direction TB
-        AS1["ChatCompletionsResponseChunk 流"]:::oai
-        AS2["Chunk 状态机<br/>块类型切换 / 索引递进"]:::step
-        AS3["事件映射<br/>content → text_delta<br/>reasoning → thinking_delta<br/>tool_calls → input_json_delta"]:::step
+        AS1["Luồng ChatCompletionsResponseChunk"]:::oai
+        AS2["State machine chunk<br/>Đổi loại block / Tăng index"]:::step
+        AS3["Map event<br/>content -> text_delta<br/>reasoning -> thinking_delta<br/>tool_calls -> input_json_delta"]:::step
         AS4["MessagesResponseChunk"]:::anth
     end
 
@@ -339,15 +334,14 @@ flowchart TB
     style RS4 fill:#f8fafc,stroke:#d07354,stroke-width:2px
 ```
 
-详细开发指南（构建、测试、Docker 部署、e2e 测试等）见 [docs/development.md](./docs/development.md)。
-## 许可证
+Hướng dẫn phát triển chi tiết (build, test, Docker deploy, e2e test, v.v.) xem [docs/development.md](./docs/development.md).
+
+## Giấy phép
 
 [GNU General Public License v3.0](LICENSE)
 
-[DeepSeek 官方 API](https://platform.deepseek.com/top_up) 非常便宜，请大家多多支持官方服务。
+[DeepSeek API chính thức](https://platform.deepseek.com/top_up) rất rẻ. Hãy ủng hộ dịch vụ chính thức khi có thể.
 
-本项目的初心是想体验官方网页端灰度测试的最新模型。
+Mục đích ban đầu của dự án là trải nghiệm các model mới đang được thử nghiệm trên Web chính thức.
 
-**严禁商用**，避免对官方服务器造成压力，否则风险自担。
-
-~~还有deepseek依旧是国一模!!!~~
+**Nghiêm cấm thương mại hóa**, tránh gây áp lực lên server chính thức. Mọi rủi ro tự chịu.

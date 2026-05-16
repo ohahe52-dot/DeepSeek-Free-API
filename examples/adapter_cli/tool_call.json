@@ -1,18 +1,18 @@
 {
   "model": "deepseek-default",
   "messages": [
-    { "role": "user", "content": "北京今天天气怎么样？" }
+    { "role": "user", "content": "Thoi tiet Ha Noi hom nay the nao?" }
   ],
   "tools": [
     {
       "type": "function",
       "function": {
         "name": "get_weather",
-        "description": "获取指定城市的天气",
+        "description": "Lay thoi tiet cua thanh pho chi dinh",
         "parameters": {
           "type": "object",
           "properties": {
-            "city": { "type": "string", "description": "城市名" }
+            "city": { "type": "string", "description": "Ten thanh pho" }
           },
           "required": ["city"]
         }

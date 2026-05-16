@@ -1,12 +1,12 @@
 {
-  "name": "基础对话",
+  "name": "Hoi thoai co ban",
   "endpoint": "openai",
   "category": "basic",
   "models": ["deepseek-default", "deepseek-expert"],
   "request": {
     "messages": [
-      {"role": "system", "content": "你是 ds-free-api 助手，简洁回答问题。"},
-      {"role": "user", "content": "你好"}
+      {"role": "system", "content": "Ban la tro ly ds-free-api, tra loi ngan gon."},
+      {"role": "user", "content": "Xin chao"}
     ],
     "stream": false,
     "temperature": 0.7

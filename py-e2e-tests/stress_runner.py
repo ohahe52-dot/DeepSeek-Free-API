@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""压测入口 —— 多迭代并发，跑 basic/ + repair/ 全部场景
+"""Diem vao stress test - nhieu vong lap dong thoi, chay moi scenario basic/ + repair/
 
-安全并发数 = max(1, 账号数 / 2)，stress 默认 = 安全并发数 + 1
+So song song an toan = max(1, so tai khoan / 2), stress mac dinh = so an toan + 1
 """
 
 import argparse
@@ -27,16 +27,16 @@ def main():
     api_key = config["api_key"]
     stress_parallel = safe + 1
 
-    parser = argparse.ArgumentParser(description="端到端压测")
-    parser.add_argument("--iterations", type=int, default=3, help="每场景迭代数 (默认: 3)")
-    parser.add_argument("--parallel", type=int, default=stress_parallel, help=f"并行数 (默认: {stress_parallel})")
-    parser.add_argument("--models", type=str, nargs="*", default=None, help="模型过滤")
-    parser.add_argument("--filter", type=str, nargs="*", default=None, help="场景名称关键字过滤（多个用空格分隔）")
-    parser.add_argument("--report", type=str, default=None, help="输出 JSON 报告路径")
-    parser.add_argument("--show-output", action="store_true", help="显示模型输出内容")
+    parser = argparse.ArgumentParser(description="Stress test e2e")
+    parser.add_argument("--iterations", type=int, default=3, help="So vong lap moi scenario (mac dinh: 3)")
+    parser.add_argument("--parallel", type=int, default=stress_parallel, help=f"So song song (mac dinh: {stress_parallel})")
+    parser.add_argument("--models", type=str, nargs="*", default=None, help="Loc model")
+    parser.add_argument("--filter", type=str, nargs="*", default=None, help="Loc tu khoa ten scenario (nhieu tu cach nhau bang khoang trang)")
+    parser.add_argument("--report", type=str, default=None, help="Path xuat bao cao JSON")
+    parser.add_argument("--show-output", action="store_true", help="Hien noi dung output cua model")
     args = parser.parse_args()
 
-    # 加载全部场景
+    # Tai moi scenario
     basic_oai = load_scenarios("scenarios/basic", "openai", args.filter)
     basic_anth = load_scenarios("scenarios/basic", "anthropic", args.filter)
     repair_sc = load_scenarios("scenarios/repair", None, args.filter)
@@ -55,12 +55,12 @@ def main():
     total_scenarios = len(all_scenarios)
     total_requests = total_scenarios * len(models) * args.iterations
 
-    print(f"\n端到端压测")
-    print(f"  场景: {total_scenarios} 个 (basic + repair)")
-    print(f"  模型: {', '.join(models)}")
-    print(f"  迭代: {args.iterations} 次/场景/模型")
-    print(f"  并行: {args.parallel}")
-    print(f"  总计: {total_requests} 次请求\n")
+    print(f"\nStress test e2e")
+    print(f"  Scenario: {total_scenarios} (basic + repair)")
+    print(f"  Model: {', '.join(models)}")
+    print(f"  Vong lap: {args.iterations} lan/Scenario/Model")
+    print(f"  Song song: {args.parallel}")
+    print(f"  Tong: {total_requests} request\n")
 
     tasks: list[tuple[str, str, dict, int]] = []
     for model in models:
@@ -107,9 +107,9 @@ def main():
                 _print_output(result)
 
     total_duration = time.time() - start_total
-    print(f"\n  总耗时: {format_duration(total_duration)}")
+    print(f"\n  Tong thoi gian: {format_duration(total_duration)}")
 
-    report = print_report(all_results, "端到端压测报告", args.parallel)
+    report = print_report(all_results, "Bao cao stress test e2e", args.parallel)
     report["total_duration"] = round(total_duration, 1)
 
     if args.report:
@@ -126,7 +126,7 @@ def main():
                 "summary": report,
                 "results": all_results,
             }, f, ensure_ascii=False, indent=2)
-        print(f"  报告已输出: {args.report}")
+        print(f"  Bao cao da xuat: {args.report}")
 
     sys.exit(0 if report["failed"] == 0 else 1)
 

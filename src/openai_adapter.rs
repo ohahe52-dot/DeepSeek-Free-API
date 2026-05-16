@@ -1,9 +1,9 @@
-//! OpenAI 协议适配层 —— OpenAI JSON 与 ds_core 内部格式的双向转换
+//! Tầng adapter giao thức OpenAI - chuyển đổi hai chiều giữa OpenAI JSON và định dạng nội bộ ds_core
 //!
-//! 本模块负责将 OpenAI 兼容的 HTTP 请求转换为 ds_core 内部格式，
-//! 并将 ds_core 的响应转换为 OpenAI 兼容的 JSON 格式。
+//! Module này chuyển HTTP request tương thích OpenAI sang định dạng nội bộ ds_core,
+//! rồi chuyển response của ds_core sang JSON tương thích OpenAI.
 //!
-//! 对外暴露最小接口：OpenAIAdapter, OpenAIAdapterError
+//! Chỉ xuất ra giao diện tối thiểu: OpenAIAdapter, OpenAIAdapterError
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -21,27 +21,27 @@ pub(crate) mod types;
 
 pub use types::{ChatCompletionsRequest, ChatCompletionsResponse, ChatCompletionsResponseChunk};
 
-/// 流式响应类型（SSE 字节流）
+/// Kiểu response dạng stream (stream byte SSE)
 pub type StreamResponse = Pin<Box<dyn Stream<Item = Result<Bytes, OpenAIAdapterError>> + Send>>;
 
-/// 流式响应结构体流
+/// Stream struct response dạng stream
 pub type ChunkStream =
     Pin<Box<dyn Stream<Item = Result<ChatCompletionsResponseChunk, OpenAIAdapterError>> + Send>>;
 
-/// Chat Completions 统一输出
+/// Output thống nhất của Chat Completions
 pub enum ChatOutput {
     Stream(ChunkStream),
     Json(ChatCompletionsResponse),
 }
 
-/// adapter 层通用结果包装：携带请求结果和账号标识
+/// Wrapper kết quả chung của tầng adapter: chứa kết quả request và định danh tài khoản
 pub struct ChatResult<T> {
     pub data: T,
     pub account_id: String,
     pub prompt_tokens: u32,
 }
 
-/// OpenAI 适配器
+/// Adapter OpenAI
 pub struct OpenAIAdapter {
     ds_core: Arc<DeepSeekCore>,
     model_types: tokio::sync::RwLock<Vec<String>>,
@@ -50,16 +50,16 @@ pub struct OpenAIAdapter {
     max_input_tokens: tokio::sync::RwLock<Vec<u32>>,
     max_output_tokens: tokio::sync::RwLock<Vec<u32>>,
     tag_config: tokio::sync::RwLock<Arc<response::TagConfig>>,
-    /// 缓存的 tiktoken BPE 编码器（避免每次请求重建）
+    /// Encoder tiktoken BPE được cache (tránh tạo lại cho mỗi request)
     bpe: Option<Arc<tiktoken_rs::CoreBPE>>,
 }
 
 impl OpenAIAdapter {
-    /// 创建适配器实例
+    /// Tạo instance adapter
     pub async fn new(config: &crate::config::Config) -> Result<Self, OpenAIAdapterError> {
         let ds_core = Arc::new(DeepSeekCore::new(config).await?);
         let model_registry = config.deepseek.model_registry();
-        // 预初始化 tiktoken BPE（避免每次请求重建词表）
+        // Khởi tạo trước tiktoken BPE (tránh tạo lại bảng từ cho mỗi request)
         let bpe = tiktoken_rs::cl100k_base().ok().map(Arc::new);
 
         Ok(Self {
@@ -76,22 +76,22 @@ impl OpenAIAdapter {
         })
     }
 
-    /// POST /v1/chat/completions（统一入口）
+    /// POST /v1/chat/completions (điểm vào thống nhất)
     ///
-    /// 内部校验参数、构建 ChatML prompt、按 stream 标记分流：
-    /// - stream=true  → 返回 SSE 字节流
-    /// - stream=false → 将 SSE 流聚合为单个 JSON 对象后返回
+    /// Kiểm tra tham số, tạo ChatML prompt, rồi rẽ nhánh theo cờ stream:
+    /// - stream=true  -> trả về stream byte SSE
+    /// - stream=false -> gom stream SSE thành một JSON object rồi trả về
     pub async fn chat_completions(
         &self,
         mut req: ChatCompletionsRequest,
         request_id: &str,
     ) -> Result<ChatResult<ChatOutput>, OpenAIAdapterError> {
-        log::debug!(target: "adapter", "req={} 适配器开始处理: model={}, stream={}", request_id, req.model, req.stream);
+        log::debug!(target: "adapter", "req={} adapter bắt đầu xử lý: model={}, stream={}", request_id, req.model, req.stream);
         use crate::openai_adapter::types::{
             FunctionCallOption, NamedFunction, NamedToolChoice, Tool, ToolChoice,
         };
 
-        // 兼容旧版 functions / function_call → tools / tool_choice
+        // Tương thích functions / function_call đời cũ -> tools / tool_choice
         if req.tools.as_ref().map(|t| t.is_empty()).unwrap_or(true)
             && let Some(functions) = req.functions.clone()
             && !functions.is_empty()
@@ -152,7 +152,7 @@ impl OpenAIAdapter {
         let chat_resp = self.try_chat(chat_req, request_id).await?;
         let account_id = chat_resp.account_id;
 
-        // 为修复模型准备工具定义信息
+        // Chuẩn bị thông tin định nghĩa công cụ cho mô hình sửa
         let tool_defs = req.tools.as_ref().map(|tools| {
             tools
                 .iter()
@@ -210,7 +210,7 @@ impl OpenAIAdapter {
         }
     }
 
-    /// 内部辅助：对 `Overloaded` 进行退避重试（v0_chat 内部已做换号重试，此处为号池级兜底）
+    /// Helper nội bộ: retry có backoff với `Overloaded` (v0_chat đã đổi tài khoản, đây là lớp dự phòng cấp pool)
     pub(crate) async fn try_chat(
         &self,
         req: crate::ds_core::ChatRequest,
@@ -223,19 +223,19 @@ impl OpenAIAdapter {
             match self.ds_core.v0_chat(req.clone(), request_id).await {
                 Ok(resp) => {
                     if attempt > 0 {
-                        log::info!(target: "adapter", "req={} 第 {} 次重试成功", request_id, attempt);
+                        log::info!(target: "adapter", "req={} retry lần {} thành công", request_id, attempt);
                     }
                     return Ok(resp);
                 }
                 Err(CoreError::Overloaded) if attempt + 1 < MAX_RETRIES => {
                     let delay = BASE_DELAY_MS * (1 << attempt);
-                    log::warn!(target: "adapter", "req={} Overloaded, 第 {} 次重试等待 {}ms", request_id, attempt + 1, delay);
+                    log::warn!(target: "adapter", "req={} Overloaded, retry lần {} chờ {}ms", request_id, attempt + 1, delay);
                     tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
                 }
                 Err(e) => return Err(e),
             }
         }
-        log::warn!(target: "adapter", "req={} {} 次重试均失败，放弃", request_id, MAX_RETRIES);
+        log::warn!(target: "adapter", "req={} cả {} lần retry đều thất bại, bỏ cuộc", request_id, MAX_RETRIES);
         Err(CoreError::Overloaded)
     }
 
@@ -257,9 +257,9 @@ impl OpenAIAdapter {
         models::get(&model_types, &max_input, &max_output, &aliases, model_id)
     }
 
-    /// 原始 DeepSeek SSE 流（不经 OpenAI 协议转换）
+    /// Stream SSE DeepSeek gốc (không chuyển qua giao thức OpenAI)
     ///
-    /// 用于流分析：对比原始响应与 OpenAI 转换后的差异，定位转换 bug
+    /// Dùng để phân tích stream: so sánh response gốc với bản chuyển đổi OpenAI để tìm lỗi chuyển đổi
     pub async fn raw_chat_completions_stream(
         &self,
         body: &[u8],
@@ -298,12 +298,12 @@ impl OpenAIAdapter {
         })
     }
 
-    /// 获取 ds_core 账号池状态
+    /// Lấy trạng thái pool tài khoản ds_core
     pub fn account_statuses(&self) -> Vec<crate::ds_core::AccountStatus> {
         self.ds_core.account_statuses()
     }
 
-    /// 动态添加账号
+    /// Thêm tài khoản động
     pub async fn add_account(
         &self,
         creds: &crate::config::Account,
@@ -311,7 +311,7 @@ impl OpenAIAdapter {
         self.ds_core.add_account(creds).await
     }
 
-    /// 动态移除账号
+    /// Xóa tài khoản động
     pub async fn remove_account(
         &self,
         email_or_mobile: &str,
@@ -319,19 +319,19 @@ impl OpenAIAdapter {
         self.ds_core.remove_account(email_or_mobile).await
     }
 
-    /// 标记账号为 Error 状态
+    /// Đánh dấu tài khoản sang trạng thái Error
     pub fn mark_error(&self, email_or_mobile: &str) {
         self.ds_core.mark_error(email_or_mobile);
     }
 
-    /// 手动重新登录指定账号
+    /// Đăng nhập lại thủ công tài khoản chỉ định
     pub async fn re_login_single(&self, email_or_mobile: &str) -> Result<(), String> {
         self.ds_core.re_login_single(email_or_mobile).await
     }
 }
 
 impl OpenAIAdapter {
-    /// 批量同步账号：对比当前账号池与目标配置，增删差异账号
+    /// Đồng bộ tài khoản hàng loạt: so sánh pool hiện tại với cấu hình đích rồi thêm/xóa phần khác biệt
     pub(crate) async fn sync_accounts(&self, new_accounts: &[crate::config::Account]) {
         let old_statuses = self.account_statuses();
         let old_ids: Vec<String> = old_statuses
@@ -357,7 +357,7 @@ impl OpenAIAdapter {
                 match self.add_account(acct).await {
                     Ok(_) => _added += 1,
                     Err(e) => {
-                        log::warn!(target: "adapter", "同步添加账号 {} 失败: {}", id, e);
+                        log::warn!(target: "adapter", "Đồng bộ thêm tài khoản {} thất bại: {}", id, e);
                         _failed += 1;
                     }
                 }
@@ -380,14 +380,14 @@ impl OpenAIAdapter {
                 match self.remove_account(old_id).await {
                     Ok(_) => _removed += 1,
                     Err(e) => {
-                        log::warn!(target: "adapter", "同步移除账号 {} 失败: {}", old_id, e);
+                        log::warn!(target: "adapter", "Đồng bộ xóa tài khoản {} thất bại: {}", old_id, e);
                     }
                 }
             }
         }
     }
 
-    /// 优雅关闭
+    /// Tắt an toàn
     pub async fn shutdown(&self) {
         self.ds_core.shutdown().await;
     }
@@ -432,14 +432,14 @@ impl OpenAIAdapter {
                 let repair_req_id = format!("{}-repair-{}", req_id, n);
                 let mut prompt = String::new();
                 if !tools_info.is_empty() {
-                    prompt.push_str(&format!("可用的工具定义：\n{}\n\n", tools_info));
+                    prompt.push_str(&format!("Định nghĩa công cụ khả dụng:\n{}\n\n", tools_info));
                 }
                 prompt.push_str(&format!(
-                    "请将以下代码块中的内容提取并转换为合法的工具调用 JSON 数组。\
-                     \n每个元素必须包含 \"name\"（字符串）和 \"arguments\"（对象）字段。\
-                     \n只输出 JSON 数组本身，不要加 code fence，不要其他文字解释。\
-                     \n注意：字符串值中的引号和换行符必须用反斜杠转义（如 \\\" 和 \\n）。\
-                     \n\n需要修复的内容：\n~~~\n{tool_text}\n~~~"
+                    "Hãy trích xuất nội dung trong code block sau và chuyển thành mảng JSON gọi công cụ hợp lệ.\
+                     \nMỗi phần tử phải có trường \"name\" (chuỗi) và \"arguments\" (object).\
+                     \nChỉ xuất chính mảng JSON, không thêm code fence hoặc giải thích.\
+                     \nLưu ý: dấu nháy và ký tự xuống dòng trong giá trị chuỗi phải được escape bằng dấu gạch chéo ngược (ví dụ \\\" và \\n).\
+                     \n\nNội dung cần sửa:\n~~~\n{tool_text}\n~~~"
                 ));
                 let req = ChatRequest {
                     prompt,
@@ -450,7 +450,7 @@ impl OpenAIAdapter {
                 };
                 log::debug!(
                     target: "adapter",
-                    "{} 发起修复请求: len={}", repair_req_id, tool_text.len()
+                    "{} gửi yêu cầu sửa: len={}", repair_req_id, tool_text.len()
                 );
                 let resp = core
                     .v0_chat(req, &repair_req_id)
@@ -462,26 +462,26 @@ impl OpenAIAdapter {
     }
 }
 
-/// 适配器错误类型
+/// Kiểu lỗi adapter
 #[derive(Debug, thiserror::Error)]
 pub enum OpenAIAdapterError {
-    /// 请求格式错误
+    /// Lỗi định dạng request
     #[error("bad request: {0}")]
     BadRequest(String),
 
-    /// 服务过载，无可用的 ds_core 账号
+    /// Dịch vụ quá tải, không có tài khoản ds_core khả dụng
     #[error("service overloaded")]
     Overloaded,
 
-    /// 上游提供商错误（网络、业务错误等）
+    /// Lỗi nhà cung cấp upstream (mạng, nghiệp vụ...)
     #[error("provider error: {0}")]
     ProviderError(String),
 
-    /// 内部错误（序列化、流转换等）
+    /// Lỗi nội bộ (serialize, chuyển đổi stream...)
     #[error("internal error: {0}")]
     Internal(String),
 
-    /// tool_calls 标记解析失败，携带 `{TOOL_CALL_START}...{TOOL_CALL_END}` 内的原始文本
+    /// Parse marker tool_calls thất bại, mang text gốc trong `{TOOL_CALL_START}...{TOOL_CALL_END}`
     #[error("tool_calls repair needed: {0}")]
     ToolCallRepairNeeded(String),
 }
@@ -506,7 +506,7 @@ impl From<serde_json::Error> for OpenAIAdapterError {
 }
 
 impl OpenAIAdapterError {
-    /// 返回对应 HTTP 状态码
+    /// Trả về HTTP status tương ứng
     #[must_use]
     pub fn status_code(&self) -> u16 {
         match self {

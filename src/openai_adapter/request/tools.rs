@@ -1,7 +1,7 @@
-//! 工具解析 —— 校验 tools/tool_choice 并生成提示词注入文本
+//! Parse công cụ - kiểm tra tools/tool_choice và tạo text inject vào prompt
 //!
-//! 由于 ds_core 不支持原生 function calling，本模块将工具定义降级为
-//! 自然语言描述，并追加到 prompt 中引导模型输出。
+//! Vì ds_core không hỗ trợ function calling gốc, module này hạ cấp định nghĩa công cụ
+//! thành mô tả ngôn ngữ tự nhiên rồi nối vào prompt để hướng dẫn output của model.
 
 use crate::openai_adapter::response::{TOOL_CALL_END, TOOL_CALL_START};
 use crate::openai_adapter::types::{
@@ -9,13 +9,13 @@ use crate::openai_adapter::types::{
     FunctionDefinition, Tool, ToolChoice,
 };
 
-/// 提取后的工具上下文
+/// Ngữ cảnh công cụ sau khi trích xuất
 pub(crate) struct ToolContext {
-    /// 格式模板 + 规则 + 示例（位于工具定义之前）
+    /// Mẫu định dạng + quy tắc + ví dụ (nằm trước định nghĩa công cụ)
     pub format_block: Option<String>,
-    /// 格式化后的工具定义文本
+    /// Text định nghĩa công cụ sau khi format
     pub defs_text: Option<String>,
-    /// 根据 tool_choice / parallel_tool_calls 追加的行为指令
+    /// Chỉ dẫn hành vi thêm theo tool_choice / parallel_tool_calls
     pub instruction_text: Option<String>,
 }
 
@@ -23,9 +23,9 @@ fn has_tools(req: &ChatCompletionsRequest) -> bool {
     req.tools.as_ref().map(|t| !t.is_empty()).unwrap_or(false)
 }
 
-/// 从请求中提取并校验工具信息
+/// Trích xuất và kiểm tra thông tin công cụ từ request
 ///
-/// 当 tool_choice 为 none 时返回空的 ToolContext，不生成任何注入文本。
+/// Khi tool_choice là none, trả về ToolContext rỗng và không tạo text inject.
 pub(crate) fn extract(req: &ChatCompletionsRequest) -> Result<ToolContext, String> {
     let default_choice = if has_tools(req) {
         ToolChoice::Mode("auto".to_string())
@@ -49,7 +49,8 @@ pub(crate) fn extract(req: &ChatCompletionsRequest) -> Result<ToolContext, Strin
     match tool_choice {
         ToolChoice::Mode(mode) => {
             if mode == "required" {
-                instruction_lines.push("**注意：你必须调用一个或多个工具。**".to_string());
+                instruction_lines
+                    .push("**Lưu ý: bạn phải gọi một hoặc nhiều công cụ.**".to_string());
             }
         }
         ToolChoice::AllowedTools(AllowedToolsChoice { allowed_tools, .. }) => {
@@ -57,26 +58,26 @@ pub(crate) fn extract(req: &ChatCompletionsRequest) -> Result<ToolContext, Strin
         }
         ToolChoice::Named(named) => {
             instruction_lines.push(format!(
-                "**注意：你必须调用 '{}' 工具。**",
+                "**Lưu ý: bạn phải gọi công cụ '{}'.**",
                 named.function.name
             ));
         }
         ToolChoice::Custom(custom) => {
             instruction_lines.push(format!(
-                "**注意：你必须调用 '{}' 自定义工具。**",
+                "**Lưu ý: bạn phải gọi công cụ tùy chỉnh '{}'.**",
                 custom.custom.name
             ));
         }
     }
 
     if req.parallel_tool_calls == Some(false) {
-        instruction_lines.push("**注意：一次只能调用一个工具。**".to_string());
+        instruction_lines.push("**Lưu ý: mỗi lần chỉ được gọi một công cụ.**".to_string());
     }
 
     let format_block = has_tools(req).then(|| build_tool_instruction_block(req));
 
     let defs_text = if has_tools(req) {
-        let mut lines = vec!["你可以使用以下工具：".to_string()];
+        let mut lines = vec!["Bạn có thể dùng các công cụ sau:".to_string()];
         for (i, tool) in req.tools.as_ref().unwrap().iter().enumerate() {
             lines.push(format_tool(tool, i)?);
         }
@@ -102,28 +103,34 @@ fn validate_tool_choice(tc: &ToolChoice, tools: Option<&[Tool]>) -> Result<(), S
     match tc {
         ToolChoice::Mode(mode) => {
             if !matches!(mode.as_str(), "none" | "auto" | "required") {
-                return Err(format!("tool_choice 无效模式: {}", mode));
+                return Err(format!("Chế độ tool_choice không hợp lệ: {}", mode));
             }
             if matches!(mode.as_str(), "auto" | "required")
                 && tools.map(|t| t.is_empty()).unwrap_or(true)
             {
-                return Err("tool_choice 为 'auto' 或 'required' 时必须提供 tools".into());
+                return Err(
+                    "Khi tool_choice là 'auto' hoặc 'required' thì phải cung cấp tools".into(),
+                );
             }
             Ok(())
         }
         ToolChoice::Named(_) | ToolChoice::Custom(_) => {
             if tools.is_none() {
-                return Err("tool_choice 指定了具体工具时必须提供 tools".into());
+                return Err(
+                    "Khi tool_choice chỉ định công cụ cụ thể thì phải cung cấp tools".into(),
+                );
             }
             Ok(())
         }
         ToolChoice::AllowedTools(AllowedToolsChoice { allowed_tools, .. }) => {
             if tools.is_none() {
-                return Err("tool_choice 指定了 allowed_tools 时必须提供 tools".into());
+                return Err(
+                    "Khi tool_choice chỉ định allowed_tools thì phải cung cấp tools".into(),
+                );
             }
             if !matches!(allowed_tools.mode.as_str(), "auto" | "required") {
                 return Err(format!(
-                    "allowed_tools.mode 必须是 'auto' 或 'required'，收到: {}",
+                    "allowed_tools.mode phải là 'auto' hoặc 'required', nhận được: {}",
                     allowed_tools.mode
                 ));
             }
@@ -141,14 +148,14 @@ fn build_allowed_tools_instruction(allowed_tools: &AllowedTools, lines: &mut Vec
             .collect();
         if !names.is_empty() {
             lines.push(format!(
-                "**注意：**你只能从以下允许的工具中选择：{}。",
+                "**Lưu ý:** bạn chỉ được chọn trong các công cụ được phép sau: {}.",
                 names.join(", ")
             ));
         }
     }
 
     if allowed_tools.mode == "required" {
-        lines.push("**注意：你必须调用一个或多个工具。**".to_string());
+        lines.push("**Lưu ý: bạn phải gọi một hoặc nhiều công cụ.**".to_string());
     }
 }
 
@@ -156,24 +163,32 @@ fn format_tool(tool: &Tool, idx: usize) -> Result<String, String> {
     match tool.ty.as_str() {
         "function" => {
             let func = tool.function.as_ref().ok_or_else(|| {
-                format!("tools[{}] 类型为 'function' 时必须提供 function 定义", idx)
+                format!(
+                    "tools[{}] có type 'function' thì phải cung cấp định nghĩa function",
+                    idx
+                )
             })?;
             format_function(func)
         }
         "custom" => {
-            let custom = tool
-                .custom
-                .as_ref()
-                .ok_or_else(|| format!("tools[{}] 类型为 'custom' 时必须提供 custom 定义", idx))?;
+            let custom = tool.custom.as_ref().ok_or_else(|| {
+                format!(
+                    "tools[{}] có type 'custom' thì phải cung cấp định nghĩa custom",
+                    idx
+                )
+            })?;
             Ok(format_custom(custom))
         }
-        _ => Err(format!("tools[{}] 不支持的类型: {}", idx, tool.ty)),
+        _ => Err(format!(
+            "tools[{}] có type không được hỗ trợ: {}",
+            idx, tool.ty
+        )),
     }
 }
 
 fn format_function(func: &FunctionDefinition) -> Result<String, String> {
     if func.name.trim().is_empty() {
-        return Err("tools 中 function 缺少必填字段 'name'".into());
+        return Err("function trong tools thiếu trường bắt buộc 'name'".into());
     }
     let params = serde_json::to_string(&func.parameters).unwrap_or_else(|_| "{}".into());
     let call_example = format!(
@@ -182,59 +197,63 @@ fn format_function(func: &FunctionDefinition) -> Result<String, String> {
     );
     let desc = func.description.as_deref().unwrap_or("").trim();
     let desc_block = if desc.is_empty() {
-        "  无描述".to_string()
+        "  Không có mô tả".to_string()
     } else {
         format!("~~~markdown\n  {}\n~~~\n", desc)
     };
     Ok(format!(
-        "- **{}** (function):\n  - 调用方法: `{}`\n  - 简要说明:\n{}",
+        "- **{}** (function):\n  - Cách gọi: `{}`\n  - Mô tả ngắn:\n{}",
         func.name, call_example, desc_block,
     ))
 }
 
-/// 构建工具调用指令块：模板 → 规则 → 动态正确示例
+/// Tạo block chỉ dẫn gọi công cụ: mẫu -> quy tắc -> ví dụ đúng động
 fn build_tool_instruction_block(req: &ChatCompletionsRequest) -> String {
     let mut lines: Vec<String> = Vec::new();
 
-    // 模板
-    lines.push("**工具调用格式 — 请严格遵守：**".into());
+    // Mẫu
+    lines.push("**Định dạng gọi công cụ - hãy tuân thủ nghiêm ngặt:**".into());
     lines.push(String::new());
-    lines.push("将 JSON 数组包裹在工具调用标记中：".into());
+    lines.push("Bọc mảng JSON bằng thẻ gọi công cụ:".into());
     lines.push(String::new());
     lines.push(format!(
-        "{TOOL_CALL_START}[{{\"name\": \"工具名\", \"arguments\": {{参数JSON}}}}]{TOOL_CALL_END}"
+        "{TOOL_CALL_START}[{{\"name\": \"tên_công_cụ\", \"arguments\": {{JSON_tham_số}}}}]{TOOL_CALL_END}"
     ));
     lines.push(String::new());
 
-    // 规则
-    lines.push("**规则：**".into());
+    // Quy tắc
+    lines.push("**Quy tắc:**".into());
     lines.push(String::new());
     lines.push(
-        "**核心：决定调用工具时，你的响应中只允许出现工具调用文本本身，禁止任何解释、前缀、总结、问候语等额外内容。**".into(),
+        "**Cốt lõi: khi quyết định gọi công cụ, phản hồi chỉ được chứa chính văn bản gọi công cụ; cấm mọi giải thích, tiền tố, tóm tắt, lời chào hoặc nội dung thừa.**".into(),
     );
     lines.push(String::new());
-    lines.push(format!("1. JSON 数组必须以 `{TOOL_CALL_START}` 开头、以 `{TOOL_CALL_END}` 结尾，将数组**完整包裹**在标记内。"));
-    lines.push("2. 所有工具调用必须放在**一个** JSON 数组中，多个调用用逗号分隔。".into());
+    lines.push(format!("1. Mảng JSON phải bắt đầu bằng `{TOOL_CALL_START}` và kết thúc bằng `{TOOL_CALL_END}`; mảng phải được **bọc trọn vẹn** trong thẻ."));
+    lines.push("2. Mọi lệnh gọi công cụ phải nằm trong **một** mảng JSON; nhiều lệnh gọi phân tách bằng dấu phẩy.".into());
     lines.push(format!(
-        "3. 输出 `{TOOL_CALL_END}` 后**立即停止**，不得添加后续文本、XML 标签或说明文字。"
+        "3. Sau khi xuất `{TOOL_CALL_END}`, **dừng ngay**; không thêm văn bản, thẻ XML hoặc chú thích phía sau."
     ));
-    lines.push("4. 不要将工具调用包裹在 markdown 代码块中。".into());
-    lines.push("5. 字符串参数值必须用**双引号**包裹（JSON 标准）。".into());
-    lines.push(format!(
-        "6. 决定调用工具时，输出的**第一个非空白字符**必须是 `{TOOL_CALL_START}`。"
-    ));
-    lines.push(format!(
-        "7. 整个响应中**只能出现一个 `{TOOL_CALL_START}` 块**，不要重复输出多个 `{TOOL_CALL_START}` 块。"
-    ));
-    lines.push(format!(
-        "8. **重复：** 整个响应中只能出现一个 `{TOOL_CALL_START}` 块，不要重复输出。如果你已经输出了一个 `{TOOL_CALL_START}` 块，绝对不要再输出第二个。"
-    ));
-    lines.push(format!(
-        "9. **重复：** 禁止在 `{TOOL_CALL_START}` 之前输出任何文字，包括但不限于解释、确认、总结、问候语。"
-    ));
-    lines.push("10. 不要把回复和工具调用置于思考内容中。".to_string());
+    lines.push("4. Không bọc lệnh gọi công cụ trong code block markdown.".into());
     lines.push(
-        "11. **重复：** 思考内容（<think> 标签内）仅用于内部推理过程，不要将最终回复或工具调用放在 <think> 标签中。".to_string(),
+        "5. Giá trị tham số kiểu chuỗi phải được bọc bằng **dấu nháy kép** (chuẩn JSON).".into(),
+    );
+    lines.push(format!(
+        "6. Khi quyết định gọi công cụ, **ký tự không trắng đầu tiên** trong output phải là `{TOOL_CALL_START}`."
+    ));
+    lines.push(format!(
+        "7. Toàn bộ phản hồi **chỉ được có một khối `{TOOL_CALL_START}`**; không xuất lặp nhiều khối `{TOOL_CALL_START}`."
+    ));
+    lines.push(format!(
+        "8. **Nhắc lại:** toàn bộ phản hồi chỉ được có một khối `{TOOL_CALL_START}`. Nếu đã xuất một khối `{TOOL_CALL_START}`, tuyệt đối không xuất khối thứ hai."
+    ));
+    lines.push(format!(
+        "9. **Nhắc lại:** cấm xuất bất kỳ chữ nào trước `{TOOL_CALL_START}`, gồm giải thích, xác nhận, tóm tắt, lời chào."
+    ));
+    lines.push(
+        "10. Không đặt phản hồi cuối hoặc lệnh gọi công cụ trong nội dung suy nghĩ.".to_string(),
+    );
+    lines.push(
+        "11. **Nhắc lại:** nội dung suy nghĩ (trong thẻ <think>) chỉ dùng cho suy luận nội bộ; không đặt phản hồi cuối hoặc lệnh gọi công cụ trong thẻ <think>.".to_string(),
     );
     lines.push(String::new());
 
@@ -247,25 +266,25 @@ fn build_tool_instruction_block(req: &ChatCompletionsRequest) -> String {
         .collect();
     let a = tool_names.first().map(|s| s.as_str()).unwrap_or("tool_a");
 
-    // 正确示例（使用实际工具名，带真实参数）
-    lines.push("**正确示例：**".into());
+    // Ví dụ đúng (dùng tên công cụ thật, có tham số thật)
+    lines.push("**Ví dụ đúng:**".into());
     lines.push(String::new());
 
-    // 示例A：单个工具
-    lines.push("**示例A** — 调用一个工具：".into());
+    // Ví dụ A: một công cụ
+    lines.push("**Ví dụ A** - gọi một công cụ:".into());
     lines.push(format!(
         "{TOOL_CALL_START}[{{\"name\": \"{a}\", \"arguments\": {}}}]{TOOL_CALL_END}",
         example_args(a)
     ));
     lines.push(String::new());
 
-    // 示例B：两个工具并行
+    // Ví dụ B: hai công cụ song song
     if tool_names.len() >= 2 {
         let items: Vec<String> = tool_names[..2]
             .iter()
             .map(|n| format!("{{\"name\": \"{n}\", \"arguments\": {}}}", example_args(n)))
             .collect();
-        lines.push("**示例B** — 同时调用多个工具（一个数组包含全部调用）：".into());
+        lines.push("**Ví dụ B** - gọi nhiều công cụ cùng lúc (một mảng chứa mọi lệnh gọi):".into());
         lines.push(String::new());
         lines.push(format!(
             "{TOOL_CALL_START}[{}]{TOOL_CALL_END}",
@@ -274,13 +293,15 @@ fn build_tool_instruction_block(req: &ChatCompletionsRequest) -> String {
         lines.push(String::new());
     }
 
-    // 示例C：三个工具并行
+    // Ví dụ C: ba công cụ song song
     if tool_names.len() >= 3 {
         let items: Vec<String> = tool_names[..3]
             .iter()
             .map(|n| format!("{{\"name\": \"{n}\", \"arguments\": {}}}", example_args(n)))
             .collect();
-        lines.push("**示例C** — 同时调用三个工具（所有调用在一个数组中）：".into());
+        lines.push(
+            "**Ví dụ C** - gọi ba công cụ cùng lúc (mọi lệnh gọi nằm trong một mảng):".into(),
+        );
         lines.push(String::new());
         lines.push(format!(
             "{TOOL_CALL_START}[{}]{TOOL_CALL_END}",
@@ -289,10 +310,10 @@ fn build_tool_instruction_block(req: &ChatCompletionsRequest) -> String {
         lines.push(String::new());
     }
 
-    // 示例D：嵌套参数（参数值为数组或对象时仍是标准 JSON）
+    // Ví dụ D: tham số lồng nhau (object/array vẫn là JSON chuẩn)
     if !tool_names.is_empty() {
         let d_name = tool_names.first().map(|s| s.as_str()).unwrap_or("tool_a");
-        lines.push("**示例D** — 参数值为嵌套对象/数组（仍然是标准 JSON）：".into());
+        lines.push("**Ví dụ D** - tham số là object/array lồng nhau (vẫn là JSON chuẩn):".into());
         lines.push(String::new());
         lines.push(format!(
             "{TOOL_CALL_START}[{{\"name\": \"{d_name}\", \"arguments\": {}}}]{TOOL_CALL_END}",
@@ -304,7 +325,7 @@ fn build_tool_instruction_block(req: &ChatCompletionsRequest) -> String {
     lines.join("\n")
 }
 
-/// 根据工具名返回示例参数字符串
+/// Trả về chuỗi tham số ví dụ theo tên công cụ.
 fn example_args(name: &str) -> String {
     let args: &str = match name {
         "Read" | "read_file" => r#""file_path": "/path/to/file""#,
@@ -321,7 +342,7 @@ fn example_args(name: &str) -> String {
     format!("{{{args}}}")
 }
 
-/// 返回嵌套参数示例（参数值为数组或对象）
+/// Trả về ví dụ tham số lồng nhau (giá trị tham số là array hoặc object).
 fn example_nested_args(name: &str) -> String {
     match name {
         "Edit" => r#"{"file_path": "/path/to/file", "edits": [{"old_string": "foo", "new_string": "bar"}, {"old_string": "x", "new_string": "y"}]}"#.into(),
@@ -336,12 +357,16 @@ fn format_custom(custom: &CustomTool) -> String {
         Some(CustomToolFormat::Grammar { grammar }) => {
             format!("grammar(syntax: {})", grammar.syntax)
         }
-        None => "无约束".into(),
+        None => "Không ràng buộc".into(),
     };
     format!(
-        "- **{}** (custom):\n  - 调用方法: `{}`\n  - 简要说明: {}",
+        "- **{}** (custom):\n  - Cách gọi: `{}`\n  - Mô tả ngắn: {}",
         custom.name,
         method,
-        if desc.is_empty() { "无描述" } else { desc },
+        if desc.is_empty() {
+            "Không có mô tả"
+        } else {
+            desc
+        },
     )
 }

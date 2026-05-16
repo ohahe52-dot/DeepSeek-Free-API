@@ -1,49 +1,49 @@
-# adapter_cli 测试脚本
-# 所有请求均使用 OpenAI JSON body
+# Script test adapter_cli
+# Moi request deu dung OpenAI JSON body
 
-# 查看 ds_core 账号池状态
+# Xem trang thai pool tai khoan ds_core
 status
 
-# 基础非流式（基线）
+# Co ban khong stream (baseline)
 chat examples/adapter_cli/basic_chat.json
 
-# 流式 + usage
+# Stream + usage
 chat examples/adapter_cli/stream.json
 
-# 深度思考（expert 模型）
+# Suy luan sau (model expert)
 chat examples/adapter_cli/reasoning.json
 
-# 智能搜索
+# Search thong minh
 chat examples/adapter_cli/web_search.json
 
-# 深度思考 + 智能搜索
+# Suy luan sau + search thong minh
 chat examples/adapter_cli/reasoning_search.json
 
-# stop 序列
+# Stop sequence
 chat examples/adapter_cli/stop.json
 
-# 工具调用（auto）
+# Goi cong cu (auto)
 chat examples/adapter_cli/tool_call.json
 
-# 工具调用（required）
+# Goi cong cu (required)
 chat examples/adapter_cli/tool_call_required.json
 
-# 工具调用（并行）
+# Goi cong cu (song song)
 chat examples/adapter_cli/tool_call_parallel.json
 
-# 工具调用（多轮历史）
+# Goi cong cu (lich su nhieu luot)
 chat examples/adapter_cli/tool_call_multi_turn.json
 
-# 原始 DeepSeek SSE（不经转换）
+# DeepSeek SSE goc (khong chuyen doi)
 raw examples/adapter_cli/basic_chat.json
 
-# 上下对照原始流和转换后流
+# Doi chieu stream goc va stream da chuyen doi
 compare examples/adapter_cli/stream.json
 
-# 并发基础请求
+# Request co ban dong thoi
 concurrent 3 examples/adapter_cli/basic_chat.json
 
-# 模型接口
+# API model
 models
 model deepseek-default
 

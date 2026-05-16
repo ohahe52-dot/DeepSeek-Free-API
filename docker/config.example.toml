@@ -2,25 +2,25 @@
 host = "0.0.0.0"
 port = 22217
 
-# CORS 允许的 Origin 列表（默认 ["http://localhost:22217"]）
-# 设为 ["*"] 允许所有 Origin（不推荐生产使用）
+# Danh sách Origin CORS được phép (mặc định ["http://localhost:22217"])
+# Đặt ["*"] để cho phép mọi Origin (không khuyến nghị cho môi trường production)
 # cors_origins = ["http://localhost:22217"]
 
-# API Key 和管理密码通过 Web 管理面板配置（http://0.0.0.0:22217/admin）
-# 首次访问时将引导设置管理密码，之后可在面板中创建/管理 API Key
-# Admin 配置（由管理面板自动管理，部署时无需手动填写）
+# API Key và mật khẩu quản trị được cấu hình qua bảng quản trị Web (http://0.0.0.0:22217/admin)
+# Lần đầu truy cập sẽ được hướng dẫn đặt mật khẩu quản trị, sau đó có thể tạo/quản lý API Key trong bảng quản trị.
+# Cấu hình Admin (bảng quản trị tự quản lý, khi triển khai không cần điền thủ công)
 # [admin]
 # password_hash = ""
 # jwt_secret = ""
 # jwt_issued_at = 0
 
-# API Key 列表（由管理面板自动管理，部署时无需手动填写）
+# Danh sách API Key (bảng quản trị tự quản lý, khi triển khai không cần điền thủ công)
 # [[api_keys]]
 # key = "sk-xxx"
-# description = "My API Key"
+# description = "API Key của tôi"
 # created_at = 1700000000
 
-# 账号列表（通过管理面板添加，此处仅供参考）
+# Danh sách tài khoản (thêm qua bảng quản trị, phần này chỉ để tham khảo)
 # [[accounts]]
 # email = "user@example.com"
 # mobile = ""
@@ -28,44 +28,44 @@ port = 22217
 # password = "pass"
 
 [deepseek]
-# 工具调用标签配置
-# 内置模糊匹配：全角 `｜`(U+FF5C) 与 `▁`(U+2581) 分别等价于 ASCII `|` 和 `_`，
-# 自动覆盖大多数字符级幻觉变体。
-# extra 用于格式完全不同的回退标签（如 <tool_call>）：
+# Cấu hình thẻ gọi công cụ
+# Có khớp mờ tích hợp: ký tự toàn chiều rộng `｜` (U+FF5C) và `▁` (U+2581)
+# lần lượt tương đương ASCII `|` và `_`, tự phủ hầu hết biến thể ảo giác cấp ký tự.
+# extra dùng cho thẻ dự phòng có định dạng hoàn toàn khác (ví dụ <tool_call>):
 # tool_call.extra_starts = ["<|tool_call_begin|>", "<tool_calls>", "<tool_call>"]
 # tool_call.extra_ends = ["<|tool_call_end|>", "</tool_calls>", "</tool_call>"]
 
-# 已验证通过的 User-Agent（Android 客户端模拟）
+# User-Agent đã xác minh hoạt động (giả lập client Android)
 # user_agent = "DeepSeek/2.0.4 Android/35"
 
-# API 基础地址（默认）
+# Địa chỉ API gốc (mặc định)
 # api_base = "https://chat.deepseek.com/api/v0"
 
-# WASM 文件完整 URL（PoW 计算所需，版本号会变动，建议手动更新）
+# URL đầy đủ của tệp WASM (cần cho PoW; số phiên bản có thể đổi, nên cập nhật thủ công)
 # wasm_url = "https://fe-static.deepseek.com/chat/static/sha3_wasm_bg.7b9ca65ddd.wasm"
 
-# X-Client-Version 请求头（用于 expert 模型等功能）
+# Header X-Client-Version (dùng cho model expert và tính năng tương tự)
 # client_version = "2.0.4"
 
-# X-Client-Platform 请求头
+# Header X-Client-Platform
 # client_platform = "android"
 
-# X-Client-Locale 请求头
-# client_locale = "zh_CN"
+# Header X-Client-Locale
+# client_locale = "vi_VN"
 
-# 支持的模型类型列表，默认值为 ["default", "expert"]
-# 每种类型会自动映射为 OpenAI 的 model_id：deepseek-<type>
+# Danh sách loại mô hình được hỗ trợ, mặc định ["default", "expert"]
+# Mỗi loại tự ánh xạ thành model_id OpenAI: deepseek-<type>
 # model_types = ["default", "expert"]
 # max_input_tokens = [1048576, 1048576]
 # max_output_tokens = [384000, 384000]
 
-# 模型别名（可选，按 index 对齐 model_types，默认无别名）
-# 如 model_types = ["default", "expert"], model_aliases = ["", "deepseek-v4-pro"]
-# 则仅 deepseek-v4-pro → expert（index 1），空字符串被跳过
+# Bí danh mô hình (tùy chọn, căn theo index với model_types, mặc định không có bí danh)
+# Ví dụ model_types = ["default", "expert"], model_aliases = ["", "deepseek-v4-pro"]
+# Khi đó chỉ deepseek-v4-pro → expert (index 1), chuỗi rỗng bị bỏ qua
 # model_aliases = []
 
-# 代理配置（可选，绕过 CloudFront WAF 地区限制）
-# 使用非美国地区的代理出口节点可避免 WAF Challenge
+# Cấu hình proxy (tùy chọn, vượt giới hạn khu vực CloudFront WAF)
+# Dùng node proxy ngoài Hoa Kỳ có thể tránh WAF Challenge
 # [proxy]
 # url = "http://127.0.0.1:7890"
 # url = "socks5://127.0.0.1:7891"

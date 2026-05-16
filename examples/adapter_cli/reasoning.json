@@ -1,7 +1,7 @@
 {
   "model": "deepseek-expert",
   "messages": [
-    { "role": "user", "content": "分析一下 Rust 异步运行时的工作原理" }
+    { "role": "user", "content": "Phan tich co che hoat dong cua runtime bat dong bo Rust" }
   ],
   "reasoning_effort": "high"
 }

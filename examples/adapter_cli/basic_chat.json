@@ -1,6 +1,6 @@
 {
   "model": "deepseek-default",
   "messages": [
-    { "role": "user", "content": "你好，用一句话介绍 Rust 语言" }
+    { "role": "user", "content": "Xin chao, hay gioi thieu ngon ngu Rust trong mot cau" }
   ]
 }

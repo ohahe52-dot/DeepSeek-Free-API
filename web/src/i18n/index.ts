@@ -4,8 +4,12 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 
 import zhTranslation from '../locales/zh/common.json';
 import enTranslation from '../locales/en/common.json';
+import viTranslation from '../locales/vi/common.json';
 
 export const resources = {
+  vi: {
+    common: viTranslation,
+  },
   zh: {
     common: zhTranslation,
   },
@@ -19,7 +23,7 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    fallbackLng: 'zh',
+    fallbackLng: 'vi',
     debug: false,
     interpolation: {
       escapeValue: false,
@@ -28,6 +32,10 @@ i18n
     detection: {
       order: ['localStorage', 'navigator'],
       caches: ['localStorage'],
+      convertDetectedLanguage: (lng) => {
+        const base = lng.split('-')[0];
+        return base === 'vi' || base === 'zh' || base === 'en' ? base : 'vi';
+      },
     },
   });
 

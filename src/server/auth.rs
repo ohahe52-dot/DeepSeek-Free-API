@@ -1,4 +1,4 @@
-//! 鉴权模块 —— JWT 签发/验证 + 登录失败率限制
+//! Module xác thực - phát hành/kiểm tra JWT + giới hạn lỗi đăng nhập
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -33,7 +33,7 @@ fn base64url_decode(data: &str) -> Option<Vec<u8>> {
         .ok()
 }
 
-/// 签发 JWT
+/// Phát hành JWT
 pub async fn sign_jwt(store: &StoreManager) -> Option<String> {
     let secret = store.jwt_secret().await?;
     let now = epoch_secs();
@@ -55,12 +55,12 @@ pub async fn sign_jwt(store: &StoreManager) -> Option<String> {
 
     let token = format!("{}.{}", signing_input, sig_b64);
 
-    // 更新 jwt_issued_at（用于吊销旧 token）
+    // Cập nhật jwt_issued_at (dùng để thu hồi token cũ)
     store.set_jwt_issued_at(now).await;
     Some(token)
 }
 
-/// 验证 JWT，返回是否有效
+/// Kiểm tra JWT, trả về có hợp lệ không
 pub async fn verify_jwt(store: &StoreManager, token: &str) -> bool {
     let Some(secret) = store.jwt_secret().await else {
         return false;
@@ -71,7 +71,7 @@ pub async fn verify_jwt(store: &StoreManager, token: &str) -> bool {
         return false;
     }
 
-    // 验证 HMAC-SHA256 签名
+    // Kiểm tra chữ ký HMAC-SHA256
     let signing_input = format!("{}.{}", parts[0], parts[1]);
     let Ok(mut mac) = HmacSha256::new_from_slice(secret.as_bytes()) else {
         return false;
@@ -83,12 +83,12 @@ pub async fn verify_jwt(store: &StoreManager, token: &str) -> bool {
         return false;
     };
 
-    // CtOutput deref 到 [u8]，可以直接比较
+    // CtOutput deref về [u8], có thể so sánh trực tiếp
     if &*expected != sig_bytes.as_slice() {
         return false;
     }
 
-    // 解析 payload
+    // Parse payload
     let Some(payload_bytes) = base64url_decode(parts[1]) else {
         return false;
     };
@@ -104,17 +104,17 @@ pub async fn verify_jwt(store: &StoreManager, token: &str) -> bool {
         Ok(p) => p,
         Err(_) => return false,
     };
-    // sub 仅用于反序列化验证，不需要读取
+    // sub chỉ dùng để kiểm tra deserialize, không cần đọc
     let _ = payload.sub;
 
-    // 过期检查（60 秒 leeway，对齐原 jsonwebtoken 行为）
+    // Kiểm tra hết hạn (leeway 60 giây, khớp hành vi jsonwebtoken cũ)
     let now = epoch_secs();
     if now > payload.exp + 60 {
         return false;
     }
 
-    // 吊销检查：token 的 iat 必须 >= 存储的 jwt_issued_at
-    // 改密码时会更新 jwt_issued_at，使旧 token 失效
+    // Kiểm tra thu hồi: iat của token phải >= jwt_issued_at đã lưu
+    // Khi đổi mật khẩu, jwt_issued_at được cập nhật để token cũ hết hiệu lực
     if let Some(min_iat) = store.jwt_issued_at().await
         && payload.iat < min_iat
     {
@@ -124,16 +124,16 @@ pub async fn verify_jwt(store: &StoreManager, token: &str) -> bool {
     true
 }
 
-// ── 登录失败率限制 ────────────────────────────────────────────────────────
+// ── Giới hạn lỗi đăng nhập ─────────────────────────────────────────────────
 
-/// 最大失败次数
+/// Số lần thất bại tối đa
 const MAX_FAILURES: u64 = 5;
-/// 锁定时长
-const LOCKOUT_SECS: u64 = 300; // 5 分钟
+/// Thời lượng khóa
+const LOCKOUT_SECS: u64 = 300; // 5 phút
 
 pub struct LoginLimiter {
     fail_count: AtomicU64,
-    locked_until: AtomicU64, // epoch secs，0 表示未锁定
+    locked_until: AtomicU64, // epoch secs, 0 nghĩa là chưa khóa
 }
 
 impl LoginLimiter {
@@ -144,14 +144,14 @@ impl LoginLimiter {
         }
     }
 
-    /// 检查是否被锁定
+    /// Kiểm tra có bị khóa không
     pub fn is_locked(&self) -> bool {
         let until = self.locked_until.load(Ordering::Relaxed);
         if until == 0 {
             return false;
         }
         if epoch_secs() >= until {
-            // 锁定已过期，重置
+            // Khóa đã hết hạn, reset
             self.locked_until.store(0, Ordering::Relaxed);
             self.fail_count.store(0, Ordering::Relaxed);
             return false;
@@ -159,7 +159,7 @@ impl LoginLimiter {
         true
     }
 
-    /// 记录一次失败
+    /// Ghi nhận một lần thất bại
     pub fn record_failure(&self) {
         let count = self.fail_count.fetch_add(1, Ordering::Relaxed) + 1;
         if count >= MAX_FAILURES {
@@ -168,13 +168,13 @@ impl LoginLimiter {
         }
     }
 
-    /// 记录成功，重置计数
+    /// Ghi nhận thành công, reset bộ đếm
     pub fn record_success(&self) {
         self.fail_count.store(0, Ordering::Relaxed);
         self.locked_until.store(0, Ordering::Relaxed);
     }
 
-    /// 剩余锁定秒数
+    /// Số giây khóa còn lại
     pub fn remaining_lock_secs(&self) -> u64 {
         let until = self.locked_until.load(Ordering::Relaxed);
         if until == 0 {
@@ -194,28 +194,28 @@ fn epoch_secs() -> u64 {
         .as_secs()
 }
 
-// ── 高层管理函数 ──────────────────────────────────────────────────────────
+// ── Hàm quản lý cấp cao ────────────────────────────────────────────────────
 
-/// 首次设置管理员密码，返回 JWT token
+/// Đặt mật khẩu admin lần đầu, trả về JWT token
 pub async fn setup_admin(
     store: &StoreManager,
     limiter: &LoginLimiter,
     password: &str,
 ) -> Result<String, String> {
     if store.has_password().await {
-        return Err("密码已设置，请使用登录接口".into());
+        return Err("Mật khẩu đã được đặt, hãy dùng API đăng nhập".into());
     }
 
     if limiter.is_locked() {
         return Err(format!(
-            "请求次数过多，请 {} 秒后重试",
+            "Quá nhiều yêu cầu, hãy thử lại sau {} giây",
             limiter.remaining_lock_secs()
         ));
     }
 
     if password.len() < 6 {
         limiter.record_failure();
-        return Err("密码长度至少 6 位".into());
+        return Err("Mật khẩu phải có tối thiểu 6 ký tự".into());
     }
 
     let password_hash = super::store::hash_password(password);
@@ -223,33 +223,37 @@ pub async fn setup_admin(
     store
         .save_admin(password_hash, jwt_secret, 0)
         .await
-        .map_err(|e| format!("保存失败: {}", e))?;
+        .map_err(|e| format!("Lưu thất bại: {}", e))?;
 
-    sign_jwt(store).await.ok_or_else(|| "JWT 签发失败".into())
+    sign_jwt(store)
+        .await
+        .ok_or_else(|| "Không ký được JWT".into())
 }
 
-/// 密码登录，返回 JWT token
+/// Đăng nhập bằng mật khẩu, trả về JWT token
 pub async fn login_admin(
     store: &StoreManager,
     limiter: &LoginLimiter,
     password: &str,
 ) -> Result<String, String> {
     if !store.has_password().await {
-        return Err("未设置密码，请先使用 setup 接口".into());
+        return Err("Chưa đặt mật khẩu, hãy dùng API setup trước".into());
     }
 
     if limiter.is_locked() {
         return Err(format!(
-            "登录失败次数过多，请 {} 秒后重试",
+            "Đăng nhập sai quá nhiều lần, hãy thử lại sau {} giây",
             limiter.remaining_lock_secs()
         ));
     }
 
     if store.verify_password(password).await {
         limiter.record_success();
-        sign_jwt(store).await.ok_or_else(|| "JWT 签发失败".into())
+        sign_jwt(store)
+            .await
+            .ok_or_else(|| "Không ký được JWT".into())
     } else {
         limiter.record_failure();
-        Err("密码错误".into())
+        Err("Mật khẩu không đúng".into())
     }
 }

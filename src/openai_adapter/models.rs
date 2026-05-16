@@ -1,13 +1,13 @@
-//! OpenAI 模型列表响应生成
+//! Tạo response danh sách model OpenAI
 //!
-//! 基于 DeepSeek model_types + model_aliases 静态生成 OpenAI /models 响应。
+//! Tạo tĩnh response OpenAI /models dựa trên DeepSeek model_types + model_aliases.
 
 use crate::openai_adapter::types::{OpenAIModel, OpenAIModelList};
 
 const MODEL_CREATED: u64 = 1_090_108_800;
 const MODEL_OWNED_BY: &str = "deepseek-web (proxied by https://github.com/NIyueeE)";
 
-/// 根据 model_types + aliases 生成模型列表
+/// Tạo danh sách model theo model_types + aliases
 pub fn list(
     model_types: &[String],
     max_input_tokens: &[u32],
@@ -24,7 +24,7 @@ pub fn list(
         })
         .collect();
 
-    // 添加别名模型（按 index 对齐 model_types）
+    // Thêm model alias (khớp index với model_types)
     for (i, alias) in aliases.iter().enumerate() {
         if let Some(_ty) = model_types.get(i) {
             let input = max_input_tokens.get(i).copied();
@@ -39,7 +39,7 @@ pub fn list(
     }
 }
 
-/// 查询单个模型
+/// Truy vấn một model
 pub fn get(
     model_types: &[String],
     max_input_tokens: &[u32],
@@ -49,7 +49,7 @@ pub fn get(
 ) -> Option<OpenAIModel> {
     let target = id.to_lowercase();
 
-    // 先查 model_types
+    // Tìm trong model_types trước
     if let Some((idx, ty)) = model_types
         .iter()
         .enumerate()
@@ -60,7 +60,7 @@ pub fn get(
         return Some(make_model(&format!("deepseek-{}", ty), input, output));
     }
 
-    // 再查 aliases（按 index 对齐 model_types）
+    // Sau đó tìm trong aliases (khớp index với model_types)
     for (i, alias) in aliases.iter().enumerate() {
         if alias.to_lowercase() == target
             && let Some(_ty) = model_types.get(i)

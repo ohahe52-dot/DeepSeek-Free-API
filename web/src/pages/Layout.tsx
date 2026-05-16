@@ -32,10 +32,10 @@ export function Layout() {
 
   return (
     <div className="min-h-screen flex bg-background">
-      {/* Sidebar */}
+      {/* Thanh bên */}
       <aside className="w-56 border-r bg-card flex flex-col">
         <div className="p-4 flex items-center gap-2">
-          <img src="/admin/favicon.svg" alt="Logo" className="h-6 w-6" />
+          <img src="/admin/favicon.svg" alt="Biểu trưng" className="h-6 w-6" />
           <span className="font-bold text-lg">DS Free API</span>
         </div>
         <Separator />
@@ -72,7 +72,7 @@ export function Layout() {
         </div>
       </aside>
 
-      {/* Main content */}
+      {/* Nội dung chính */}
       <main className="flex-1 overflow-auto">
         <div className="p-6 w-full">
           <Outlet />

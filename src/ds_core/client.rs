@@ -1,10 +1,10 @@
-//! DeepSeek HTTP 客户端 —— 原始 API 调用层
+//! Client HTTP DeepSeek - tầng gọi API gốc
 //!
-//! 无状态管理：无缓存、无重试、无会话状态。
-//! 每个方法对应一个 REST 端点（详见 docs/ds-api-reference.md）。
-//! 流方法（completion/edit_message）返回原始字节流，由上层解析 SSE。
+//! Không quản lý trạng thái: không cache, không retry, không session state.
+//! Mỗi method tương ứng một REST endpoint (xem docs/ds-api-reference.md).
+//! Method stream (completion/edit_message) trả về stream byte gốc, tầng trên parse SSE.
 //!
-//! 仅包含最小业务逻辑：HTTP 错误码和业务错误码解析（into_result）。
+//! Chỉ chứa logic nghiệp vụ tối thiểu: parse mã lỗi HTTP và mã lỗi nghiệp vụ (into_result).
 
 use bytes::Bytes;
 use futures::{Stream, TryStreamExt};
@@ -15,7 +15,7 @@ use thiserror::Error;
 use wreq::multipart::{Form, Part};
 use wreq_util::Emulation;
 
-// API 端点常量
+// Hằng endpoint API
 const ENDPOINT_USERS_LOGIN: &str = "/users/login";
 const ENDPOINT_CHAT_SESSION_CREATE: &str = "/chat_session/create";
 const ENDPOINT_CHAT_SESSION_DELETE: &str = "/chat_session/delete";
@@ -31,23 +31,23 @@ const ENDPOINT_FILE_FETCH: &str = "/file/fetch_files";
 
 #[derive(Debug, Error)]
 pub enum ClientError {
-    /// HTTP 层错误（网络、超时、DNS 等）
+    /// Lỗi tầng HTTP (mạng, timeout, DNS...)
     #[error("HTTP error: {0}")]
     Http(#[from] wreq::Error),
 
-    /// HTTP 状态码非 2xx
+    /// HTTP status không phải 2xx
     #[error("HTTP status {status}: {body}")]
     Status { status: u16, body: String },
 
-    /// 业务错误：API 返回 HTTP 200 但 biz_code 非 0
+    /// Lỗi nghiệp vụ: API trả HTTP 200 nhưng biz_code khác 0
     #[error("Business error: code={code}, msg={msg}")]
     Business { code: i64, msg: String },
 
-    /// JSON 解析失败
+    /// Parse JSON thất bại
     #[error("JSON parse error: {0}")]
     Json(#[from] serde_json::Error),
 
-    /// Header 值包含非法字符
+    /// Giá trị header chứa ký tự không hợp lệ
     #[error("Invalid header value: {0}")]
     InvalidHeader(String),
 }
@@ -86,7 +86,7 @@ impl<T: serde::de::DeserializeOwned> Envelope<T> {
         }
         data.biz_data.map_or_else(
             || {
-                // 允许 biz_data 为 null，尝试从 null 构造 T（仅当 T 是 Option 时成功）
+                // Cho phép biz_data là null, thử tạo T từ null (chỉ thành công khi T là Option)
                 serde_json::from_value(serde_json::Value::Null).map_err(|_| ClientError::Business {
                     code: -1,
                     msg: "missing biz_data".into(),
@@ -130,7 +130,7 @@ struct CreateSessionData {
     pub id: String,
 }
 
-// 包装类型：biz_data 里面嵌套了 chat_session 对象
+// Kiểu wrapper: biz_data lồng object chat_session
 #[derive(Debug, Deserialize)]
 struct CreateSessionWrapper {
     chat_session: CreateSessionData,
@@ -177,7 +177,7 @@ pub struct ChallengeData {
     pub target_path: String,
 }
 
-// 包装类型：biz_data 里面嵌套了 challenge 对象
+// Kiểu wrapper: biz_data lồng object challenge
 #[derive(Debug, Deserialize)]
 struct ChallengeWrapper {
     challenge: ChallengeData,
@@ -228,11 +228,11 @@ fn is_waf_challenge(resp: &wreq::Response) -> bool {
 /// Print a hint when WAF challenge is detected
 fn print_waf_hint() {
     warn!(target: "ds_core::client", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    warn!(target: "ds_core::client", "  AWS WAF Challenge detected.");
-    warn!(target: "ds_core::client", "  DeepSeek CloudFront WAF blocks US-based IPs.");
-    warn!(target: "ds_core::client", "  Rust HTTP clients can't execute the JS challenge.");
+    warn!(target: "ds_core::client", "  Phát hiện AWS WAF Challenge.");
+    warn!(target: "ds_core::client", "  DeepSeek CloudFront WAF đang chặn IP tại Hoa Kỳ.");
+    warn!(target: "ds_core::client", "  HTTP client Rust không chạy được JS challenge.");
     warn!(target: "ds_core::client", "");
-    warn!(target: "ds_core::client", "  To fix this, configure a non-US proxy in config.toml:");
+    warn!(target: "ds_core::client", "  Cách xử lý: cấu hình proxy ngoài Hoa Kỳ trong config.toml:");
     warn!(target: "ds_core::client", "    [proxy]");
     warn!(target: "ds_core::client", "    url = \"http://127.0.0.1:7890\"");
     warn!(target: "ds_core::client", "");
@@ -266,7 +266,7 @@ impl DsClient {
             builder = builder.proxy(url);
         }
         Self {
-            http: builder.build().expect("构建 HTTP 客户端失败"),
+            http: builder.build().expect("Dựng HTTP client thất bại"),
             api_base,
             wasm_url,
             user_agent,
@@ -479,7 +479,7 @@ impl DsClient {
         Ok(())
     }
 
-    /// 取消正在进行的流式输出，不需要 PoW
+    /// Hủy output stream đang chạy, không cần PoW
     pub async fn stop_stream(
         &self,
         token: &str,
@@ -496,7 +496,7 @@ impl DsClient {
         Ok(())
     }
 
-    /// 上传文件，返回文件元数据（id, status 等）
+    /// Upload file, trả về metadata file (id, status...)
     pub async fn upload_file(
         &self,
         token: &str,
@@ -520,7 +520,7 @@ impl DsClient {
         Self::parse_envelope::<UploadFileData>(resp).await
     }
 
-    /// 查询文件状态，返回文件列表（含 status: PENDING/SUCCESS/FAILED）
+    /// Truy vấn trạng thái file, trả về danh sách file (có status: PENDING/SUCCESS/FAILED)
     pub async fn fetch_files(
         &self,
         token: &str,

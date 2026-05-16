@@ -1,5 +1,5 @@
 {
-  "name": "图片base64上传",
+  "name": "Upload anh base64",
   "endpoint": "anthropic",
   "category": "basic",
   "models": [
@@ -13,7 +13,7 @@
         "content": [
           {
             "type": "text",
-            "text": "请描述这张图片的内容。"
+            "text": "Hay mo ta noi dung buc anh nay."
           },
           {
             "type": "image",

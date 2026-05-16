@@ -1,5 +1,5 @@
 {
-  "name": "文档base64上传",
+  "name": "Upload tai lieu base64",
   "endpoint": "anthropic",
   "category": "basic",
   "models": [
@@ -13,7 +13,7 @@
         "content": [
           {
             "type": "text",
-            "text": "请简要概括这个文档的内容。"
+            "text": "Hay tom tat ngan gon noi dung tai lieu nay."
           },
           {
             "type": "document",

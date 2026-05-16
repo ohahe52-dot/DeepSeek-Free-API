@@ -1,10 +1,10 @@
-//! DeepSeek Patch 状态机 —— 解析 p/o/v 路径操作并产出增量帧
+//! State machine DeepSeek Patch - parse thao tác path p/o/v và tạo frame delta
 //!
-//! 本模块对齐 chat.deepseek.com 前端 SSR delta 解析算法（DeltaParser + rm 类）：
-//! - `p` / `o` 跨事件持久化（后续事件可省略）
-//! - `o` 默认值为 "SET"
-//! - BATCH 递归分解，子项路径前置父路径（使用独立子解析器）
-//! - APPEND 对字符串 = `+=`，不存在 snapshot 替换语义
+//! Module này khớp thuật toán parse SSR delta của frontend chat.deepseek.com (DeltaParser + lớp rm):
+//! - `p` / `o` được giữ xuyên event (event sau có thể bỏ qua)
+//! - Giá trị mặc định của `o` là "SET"
+//! - BATCH phân rã đệ quy, path con được prefix bằng path cha (dùng parser con độc lập)
+//! - APPEND với string = `+=`, không có ngữ nghĩa thay snapshot
 
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -21,18 +21,18 @@ use super::sse_parser::SseEvent;
 const FRAG_THINK: &str = "THINK";
 const FRAG_RESPONSE: &str = "RESPONSE";
 
-/// 从 DeepSeek 流中解析出的单帧增量
+/// Một frame delta parse từ stream DeepSeek
 #[derive(Debug, Clone)]
 pub enum DsFrame {
-    /// event: ready，用于生成 delta.role = assistant
+    /// event: ready, dùng để tạo delta.role = assistant
     Role,
-    /// THINK fragment 追加的文本
+    /// Text append từ fragment THINK
     ThinkDelta(String),
-    /// RESPONSE fragment 追加的文本
+    /// Text append từ fragment RESPONSE
     ContentDelta(String),
-    /// response/status 变化
+    /// Thay đổi response/status
     Status(String),
-    /// accumulated_token_usage 数值
+    /// Giá trị accumulated_token_usage
     Usage(u32),
 }
 
@@ -42,11 +42,11 @@ struct Fragment {
     content: String,
 }
 
-/// 维护 DeepSeek 响应的 patch 状态，产出可供 converter 消费的增量帧
+/// Duy trì trạng thái patch của response DeepSeek, tạo frame delta cho converter tiêu thụ
 ///
-/// current_path / current_op 跨事件持久化，默认值对齐前端 DeltaParser：
-/// - `current_op` 默认 "SET"（初始快照、status 更新等不显式带 `o` 时）
-/// - `current_path` 默认 None（初始快照无 `p` 时进入特殊处理）
+/// current_path / current_op giữ xuyên event, mặc định khớp DeltaParser frontend:
+/// - `current_op` mặc định "SET" (snapshot ban đầu, update status... khi không có `o` rõ ràng)
+/// - `current_path` mặc định None (snapshot ban đầu không có `p` thì vào xử lý đặc biệt)
 #[derive(Debug, Default)]
 pub struct DsState {
     current_path: Option<String>,
@@ -57,7 +57,7 @@ pub struct DsState {
 }
 
 impl DsState {
-    /// 消费一个 SSE 事件，返回零个或多个增量帧
+    /// Tiêu thụ một event SSE, trả về không hoặc nhiều frame delta
     pub fn apply_event(&mut self, evt: &SseEvent) -> Vec<DsFrame> {
         let mut frames = Vec::new();
 
@@ -72,9 +72,9 @@ impl DsState {
         frames
     }
 
-    /// 应用单条 `p/o/v` 事件（含跨事件持久化 + BATCH 分解 + 初始快照处理）
+    /// Áp dụng một event `p/o/v` (gồm giữ xuyên event + phân rã BATCH + xử lý snapshot ban đầu)
     fn apply_patch_value(&mut self, val: serde_json::Value) -> Vec<DsFrame> {
-        // 1. p/o 跨事件持久化
+        // 1. Giữ p/o xuyên event
         if let Some(p) = val.get("p").and_then(|v| v.as_str()) {
             self.current_path = Some(p.to_string());
         }
@@ -89,36 +89,36 @@ impl DsState {
             return Vec::new();
         };
 
-        // 2. 初始快照：无 path 且 v 含 response（前端全量状态初始化）
+        // 2. Snapshot ban đầu: không có path và v chứa response (khởi tạo trạng thái đầy đủ từ frontend)
         if self.current_path.is_none()
             && let Some(response) = v.get("response")
         {
             return self.apply_initial_snapshot(response);
         }
 
-        // 3. BATCH 分解：使用独立子解析器，不污染外层 path/op
+        // 3. Phân rã BATCH: dùng parser con độc lập, không làm bẩn path/op tầng ngoài
         if op == "BATCH" {
             if v.is_array() {
                 return self.apply_batch(&path, v);
             }
-            // 非数组 v 带 BATCH：op 是上一个事件遗留的，此事件实际上是一个 SET。
-            // （实际流中 status/usage 事件会显式带 o="SET"，此处做防御处理。）
+            // v không phải mảng nhưng mang BATCH: op là phần sót từ event trước; event này thực chất là SET.
+            // (Trong stream thật, event status/usage sẽ có o="SET" rõ ràng; đây là xử lý phòng thủ.)
             return self.apply_path(&path, "SET", v);
         }
 
-        // 4. 单条 SET / APPEND 操作
+        // 4. Một thao tác SET / APPEND
         self.apply_path(&path, &op, v)
     }
 
-    /// BATCH 递归分解。使用本地子解析器状态（sub_path / sub_op），
-    /// 不修改 self.current_path / self.current_op，保持外层状态不变。
+    /// Phân rã BATCH đệ quy. Dùng trạng thái parser con cục bộ (sub_path / sub_op),
+    /// không sửa self.current_path / self.current_op, giữ nguyên trạng thái tầng ngoài.
     fn apply_batch(&mut self, parent_path: &str, v: &serde_json::Value) -> Vec<DsFrame> {
         let mut frames = Vec::new();
         let Some(arr) = v.as_array() else {
             return frames;
         };
 
-        // 子解析器独立状态（对齐前端 DeltaParser：BATCH 内建新解析器）
+        // Trạng thái parser con độc lập (khớp DeltaParser frontend: BATCH tạo parser mới)
         let (mut sub_path, mut sub_op) = (String::new(), "SET".to_string());
 
         for item in arr {
@@ -134,7 +134,7 @@ impl DsState {
             };
 
             if sub_op == "BATCH" {
-                // 嵌套 BATCH：先拼接完整路径再递归
+                // BATCH lồng nhau: ghép path đầy đủ rồi đệ quy
                 let nested = if parent_path.is_empty() {
                     sub_path.clone()
                 } else if sub_path.is_empty() {
@@ -218,7 +218,7 @@ impl DsState {
                         if !has_response && s == "FINISHED" {
                             warn!(
                                 target: "adapter",
-                                "状态机 FINISHED 但无 RESPONSE 内容: fragments={:?}, status={:?}, accumulated_token_usage={:?}",
+                                "State machine FINISHED nhưng không có nội dung RESPONSE: fragments={:?}, status={:?}, accumulated_token_usage={:?}",
                                 self.fragments.iter().map(|f| format!("{}/{}", f.ty, f.content.len())).collect::<Vec<_>>(),
                                 self.status, self.accumulated_token_usage
                             );
@@ -283,7 +283,7 @@ impl DsState {
 }
 
 pin_project! {
-    // 对 SSE 事件流应用 patch 状态机的包装流
+    // Stream wrapper áp dụng state machine patch lên stream event SSE
     pub struct StateStream<S> {
         #[pin]
         inner: S,
@@ -293,7 +293,7 @@ pin_project! {
 }
 
 impl<S> StateStream<S> {
-    /// 创建状态流包装器
+    /// Tạo wrapper stream trạng thái
     pub fn new(inner: S) -> Self {
         Self {
             inner,
@@ -327,7 +327,7 @@ where
                     let mut frames = frames;
                     let first = frames.remove(0);
                     trace!(target: "adapter", ">>> state: {}", trace_frame(&first));
-                    // 剩余帧按正序压入 pending（先压后出的会逆序，所以逆序 extend）
+                    // Đẩy frame còn lại vào pending theo thứ tự xuôi (do push rồi pop sẽ đảo, nên extend đảo)
                     this.pending.extend(frames.into_iter().rev());
                     return Poll::Ready(Some(Ok(first)));
                 }
@@ -341,7 +341,7 @@ where
     }
 }
 
-/// TRACE 日志用：截断长文本，其余变体直接 Debug
+/// Dùng cho log TRACE: cắt text dài, biến thể khác Debug trực tiếp
 fn trace_frame(frame: &DsFrame) -> String {
     const MAX_LEN: usize = 60;
     match frame {
@@ -387,7 +387,7 @@ mod tests {
             ty: "RESPONSE".into(),
             content: "hello".into(),
         });
-        // 模拟上一事件设定了 path 和 op=APPEND
+        // Mô phỏng event trước đã đặt path và op=APPEND
         state.current_path = Some("response/fragments/-1/content".into());
         state.current_op = Some("APPEND".into());
         let evt = SseEvent {
@@ -489,9 +489,9 @@ mod tests {
 
     #[test]
     fn batch_decomposition_preserves_outer_path() {
-        // BATCH 结束后，外层 path/op 保持原值
+        // Sau khi BATCH kết thúc, path/op tầng ngoài giữ nguyên
         let mut state = DsState::default();
-        // 先模拟一段正常对话：设 path+op，然后 BATCH，确保 BATCH 结束后 path/op 恢复
+        // Mô phỏng một đoạn hội thoại bình thường trước: đặt path+op, rồi BATCH, đảm bảo path/op phục hồi sau BATCH
         state.current_path = Some("response/fragments/-1".into());
         state.current_op = Some("BATCH".into());
         let evt = SseEvent {
@@ -507,10 +507,11 @@ mod tests {
     fn complex_tool_search_with_think_and_response() {
         let mut state = DsState::default();
 
-        // 初始快照：THINK fragment
+        // Snapshot ban đầu: fragment THINK
         let evt = SseEvent {
             event: None,
-            data: r#"{"v":{"response":{"fragments":[{"type":"THINK","content":"思考"}]}}}"#.into(),
+            data: r#"{"v":{"response":{"fragments":[{"type":"THINK","content":"suy nghi"}]}}}"#
+                .into(),
         };
         state.apply_event(&evt);
         assert_eq!(state.fragments.len(), 1);
@@ -521,7 +522,7 @@ mod tests {
             data: r#"{"p":"response/fragments","o":"APPEND","v":[{"id":3,"type":"TOOL_SEARCH","content":null,"queries":[{"query":"q"}],"results":[]}]}"#.into(),
         };
         let frames = state.apply_event(&evt);
-        assert!(frames.is_empty()); // TOOL_SEARCH 不产生可见内容
+        assert!(frames.is_empty()); // TOOL_SEARCH không tạo nội dung nhìn thấy
         assert_eq!(state.fragments.len(), 2);
         assert_eq!(state.fragments[1].ty, "TOOL_SEARCH");
 
@@ -534,16 +535,16 @@ mod tests {
         assert!(frames.is_empty());
         assert_eq!(state.fragments.len(), 3);
 
-        // 新 THINK APPEND
+        // THINK APPEND mới
         let evt = SseEvent {
             event: None,
             data:
-                r#"{"p":"response/fragments","o":"APPEND","v":[{"type":"THINK","content":"继续"}]}"#
+                r#"{"p":"response/fragments","o":"APPEND","v":[{"type":"THINK","content":"tiep tuc"}]}"#
                     .into(),
         };
         let frames = state.apply_event(&evt);
         assert_eq!(frames.len(), 1);
-        assert!(matches!(&frames[0], DsFrame::ThinkDelta(s) if s == "继续"));
+        assert!(matches!(&frames[0], DsFrame::ThinkDelta(s) if s == "tiep tuc"));
         assert_eq!(state.fragments.len(), 4);
 
         // RESPONSE APPEND

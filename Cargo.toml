@@ -9,10 +9,10 @@ unsafe_code = "deny"
 unused_import_braces = "deny"
 
 [lints.clippy]
-# ── 基线 ──────────────────────────────────────────────────
+# ── Nền tảng ───────────────────────────────────────────────
 all = "deny"
 
-# ── 安全网（捕获真实 bug 或隐蔽问题）──────────────────────
+# ── Lưới an toàn (bắt bug thật hoặc lỗi khó thấy) ──────────
 await_holding_lock = "deny"
 panic_in_result_fn = "deny"
 cast_lossless = "deny"
@@ -21,7 +21,7 @@ while_float = "deny"
 missing_assert_message = "deny"
 inconsistent_struct_constructor = "deny"
 
-# ── 代码质量 & 性能 ────────────────────────────────────────
+# ── Chất lượng code & hiệu năng ────────────────────────────
 redundant_clone = "deny"
 or_fun_call = "deny"
 string_add = "deny"
@@ -34,7 +34,7 @@ large_enum_variant = "deny"
 unnecessary_cast = "deny"
 unnecessary_wraps = "deny"
 
-# ── 代码风格 & 可读性 ──────────────────────────────────────
+# ── Phong cách code & khả năng đọc ─────────────────────────
 option_if_let_else = "deny"
 manual_let_else = "deny"
 if_then_some_else_none = "deny"
@@ -52,7 +52,7 @@ wildcard_imports = "deny"
 struct_excessive_bools = "deny"
 derive_partial_eq_without_eq = "deny"
 
-# ── 已通过检查保留 ────────────────────────────────────────
+# ── Giữ lại sau khi đã qua kiểm tra ────────────────────────
 unused_self = "deny"
 string_lit_as_bytes = "deny"
 ptr_as_ptr = "deny"

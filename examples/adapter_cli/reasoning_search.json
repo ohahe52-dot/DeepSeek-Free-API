@@ -1,7 +1,7 @@
 {
   "model": "deepseek-expert",
   "messages": [
-    { "role": "user", "content": "量子计算的最新突破有哪些？" }
+    { "role": "user", "content": "Nhung dot pha moi nhat cua dien toan luong tu la gi?" }
   ],
   "reasoning_effort": "high",
   "web_search_options": { "search_context_size": "high" }

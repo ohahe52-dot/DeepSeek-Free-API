@@ -1,7 +1,7 @@
 {
   "model": "deepseek-default",
   "messages": [
-    { "role": "user", "content": "2024年诺贝尔物理学奖颁给了谁？" }
+    { "role": "user", "content": "Giai Nobel Vat ly nam 2024 duoc trao cho ai?" }
   ],
   "web_search_options": { "search_context_size": "high" }
 }

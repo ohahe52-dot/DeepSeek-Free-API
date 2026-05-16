@@ -1,6 +1,6 @@
-//! HTTP 错误响应格式 —— 支持 OpenAI 与 Anthropic 兼容错误 JSON
+//! Format response lỗi HTTP - hỗ trợ JSON lỗi tương thích OpenAI và Anthropic
 //!
-//! 将适配器错误映射为标准错误响应格式。
+//! Map lỗi adapter sang format response lỗi chuẩn.
 
 use axum::{
     Json,
@@ -13,7 +13,7 @@ use std::fmt;
 use crate::anthropic_compat::AnthropicCompatError;
 use crate::openai_adapter::OpenAIAdapterError;
 
-/// OpenAI 兼容错误响应体
+/// Body response lỗi tương thích OpenAI
 #[derive(Debug, Serialize)]
 pub struct OpenAIErrorBody {
     error: OpenAIErrorDetail,
@@ -27,7 +27,7 @@ struct OpenAIErrorDetail {
     code: &'static str,
 }
 
-/// Anthropic 兼容错误响应体
+/// Body response lỗi tương thích Anthropic
 #[derive(Debug, Serialize)]
 pub struct AnthropicErrorBody {
     #[serde(rename = "type")]
@@ -35,16 +35,16 @@ pub struct AnthropicErrorBody {
     message: String,
 }
 
-/// 服务器层错误类型
+/// Kiểu lỗi tầng server
 #[derive(Debug)]
 pub enum ServerError {
-    /// OpenAI 适配器错误
+    /// Lỗi adapter OpenAI
     Adapter(OpenAIAdapterError),
-    /// Anthropic 兼容层错误
+    /// Lỗi tầng tương thích Anthropic
     Anthropic(AnthropicCompatError),
-    /// 未授权（无效 API token）
+    /// Chưa xác thực (API token không hợp lệ)
     Unauthorized,
-    /// 资源不存在
+    /// Tài nguyên không tồn tại
     NotFound(String),
 }
 
@@ -53,8 +53,8 @@ impl fmt::Display for ServerError {
         match self {
             Self::Adapter(e) => write!(f, "{}", e),
             Self::Anthropic(e) => write!(f, "{}", e),
-            Self::Unauthorized => write!(f, "invalid api token"),
-            Self::NotFound(id) => write!(f, "模型 '{}' 不存在", id),
+            Self::Unauthorized => write!(f, "API token không hợp lệ"),
+            Self::NotFound(id) => write!(f, "Mô hình '{}' không tồn tại", id),
         }
     }
 }
@@ -105,7 +105,7 @@ fn openai_error_response(err: &ServerError) -> Response {
             "invalid_request_error",
             "model_not_found",
         ),
-        // Anthropic 错误不会走到这里
+        // Lỗi Anthropic không đi tới nhánh này
         ServerError::Anthropic(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "server_error",

@@ -58,6 +58,7 @@
     "title": "配置编辑",
     "saveSuccess": "保存成功，配置已热重载",
     "saveFailed": "保存失败",
+    "saveFailedWithReason": "保存失败: {reason}",
     "loadFailed": "加载配置失败",
     "loading": "加载中...",
     "cancelConfirm": "放弃所有未保存的修改？",
@@ -166,6 +167,7 @@
     "empty": "暂无模型"
   },
   "language": {
+    "vi": "Tiếng Việt",
     "zh": "中文",
     "en": "English"
   },

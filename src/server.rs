@@ -1,6 +1,6 @@
-//! HTTP 服务器层 —— 薄路由壳，暴露 OpenAIAdapter 与 AnthropicCompat 为 HTTP 接口
+//! Tầng HTTP server - vỏ route mỏng, xuất OpenAIAdapter và AnthropicCompat thành HTTP API
 //!
-//! 本模块负责将 adapter / compat 层包装为 axum HTTP 服务。
+//! Module này bọc tầng adapter / compat thành dịch vụ HTTP axum.
 
 mod admin;
 mod auth;
@@ -35,7 +35,7 @@ use handlers::AppState;
 #[derive(Clone)]
 pub(crate) struct ApiKeyExt(pub(crate) String);
 
-/// 启动 HTTP 服务器
+/// Khởi động HTTP server
 pub async fn run(config: Config, config_path: PathBuf) -> anyhow::Result<()> {
     let cors_origins = config.server.cors_origins.clone();
     let host = config.server.host.clone();
@@ -64,23 +64,23 @@ pub async fn run(config: Config, config_path: PathBuf) -> anyhow::Result<()> {
 
     let addr = format!("{}:{}", host, port);
     let listener = TcpListener::bind(&addr).await?;
-    log::info!(target: "http::server", "openai兼容base_url: http://{}", addr);
-    log::info!(target: "http::server", "anthropic兼容base_url: http://{}/anthropic", addr);
-    log::info!(target: "http::server", "管理面板: http://{}/admin", addr);
+    log::info!(target: "http::server", "Base URL tương thích OpenAI: http://{}", addr);
+    log::info!(target: "http::server", "Base URL tương thích Anthropic: http://{}/anthropic", addr);
+    log::info!(target: "http::server", "Bảng quản trị: http://{}/admin", addr);
 
     axum::serve(listener, router)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
-    log::info!(target: "http::server", "HTTP 服务已停止，正在清理资源");
+    log::info!(target: "http::server", "Dịch vụ HTTP đã dừng, đang dọn tài nguyên");
     stats.persist_now();
     state.adapter.shutdown().await;
-    log::info!(target: "http::server", "清理完成");
+    log::info!(target: "http::server", "Dọn dẹp hoàn tất");
 
     Ok(())
 }
 
-/// 构建路由器
+/// Tạo router
 fn build_router(state: AppState, cors_origins: Vec<String>) -> Router {
     let store = state.store.clone();
 
@@ -129,8 +129,8 @@ fn build_router(state: AppState, cors_origins: Vec<String>) -> Router {
 
     let router = public.merge(api_routes).merge(admin_routes);
 
-    // 静态文件服务：/admin → web/dist/
-    // 优先从文件系统读取（开发模式），回退到编译时嵌入的资源（release 二进制）
+    // Phục vụ file tĩnh: /admin -> web/dist/
+    // Ưu tiên đọc từ file system (dev), rồi fallback sang tài nguyên nhúng lúc biên dịch (binary release)
     let web_dist = std::path::Path::new("web/dist");
     let router = if web_dist.exists() {
         router.nest_service(
@@ -139,7 +139,7 @@ fn build_router(state: AppState, cors_origins: Vec<String>) -> Router {
                 .fallback(tower_http::services::ServeFile::new("web/dist/index.html")),
         )
     } else {
-        // 编译时嵌入：fallback 模式，不注册具体路由，无冲突风险
+        // Nhúng lúc biên dịch: chế độ fallback, không đăng ký route cụ thể nên không xung đột
         router.fallback(serve_embedded_fallback)
     };
 
@@ -182,12 +182,12 @@ fn build_cors_layer(origins: &[String]) -> CorsLayer {
         ])
 }
 
-/// 编译时嵌入 web/dist/ 目录，release 二进制无需额外文件即可提供管理面板
+/// Nhúng thư mục web/dist/ lúc biên dịch, binary release có thể phục vụ bảng quản trị không cần file ngoài
 #[derive(rust_embed::Embed)]
 #[folder = "web/dist/"]
 struct WebAssets;
 
-/// 编译时嵌入资源 fallback：仅处理 /admin 及 /admin/* 路径，其余返回 404
+/// Fallback tài nguyên nhúng lúc biên dịch: chỉ xử lý /admin và /admin/*, còn lại trả 404
 async fn serve_embedded_fallback(uri: axum::http::Uri) -> Response {
     use axum::http::{StatusCode, header};
 
@@ -233,7 +233,7 @@ async fn health() -> Json<serde_json::Value> {
     }))
 }
 
-/// API Key 鉴权中间件（从 api_keys.json 校验 Bearer token）
+/// Middleware xác thực API Key (kiểm tra Bearer token từ api_keys.json)
 async fn api_key_middleware(req: Request, next: Next, store: Arc<store::StoreManager>) -> Response {
     let token = extract_bearer_token(&req);
     let valid = match token {
@@ -256,7 +256,7 @@ async fn api_key_middleware(req: Request, next: Next, store: Arc<store::StoreMan
     next.run(req).await
 }
 
-/// JWT 鉴权中间件（管理面板路由）
+/// Middleware xác thực JWT (route bảng quản trị)
 async fn jwt_middleware(req: Request, next: Next, store: Arc<store::StoreManager>) -> Response {
     let token = extract_bearer_token(&req);
     let valid = match token {
@@ -272,7 +272,7 @@ async fn jwt_middleware(req: Request, next: Next, store: Arc<store::StoreManager
     next.run(req).await
 }
 
-/// 从 Authorization 头提取 Bearer token
+/// Trích Bearer token từ header Authorization
 fn extract_bearer_token(req: &Request) -> Option<&str> {
     req.headers()
         .get("authorization")
@@ -280,7 +280,7 @@ fn extract_bearer_token(req: &Request) -> Option<&str> {
         .and_then(|h| h.strip_prefix("Bearer "))
 }
 
-/// 优雅关闭信号
+/// Tín hiệu tắt an toàn
 async fn shutdown_signal() {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
@@ -304,5 +304,5 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 
-    log::info!(target: "http::server", "收到关闭信号，开始优雅关闭");
+    log::info!(target: "http::server", "Đã nhận tín hiệu tắt, bắt đầu tắt an toàn");
 }

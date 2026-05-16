@@ -30,7 +30,7 @@ function generateApiKey(): string {
   return 'sk-' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** Collapsible section wrapper */
+/** Khung mục có thể thu gọn */
 function Section({
   title,
   icon: Icon,
@@ -126,7 +126,10 @@ export function ConfigPage() {
         setConfig(fresh);
       }
     } catch (e: unknown) {
-      setMessage({ type: 'err', text: `保存失败: ${e instanceof Error ? e.message : e}` });
+      setMessage({
+        type: 'err',
+        text: t('config.saveFailedWithReason', { reason: e instanceof Error ? e.message : String(e) }),
+      });
     } finally {
       setSaving(false);
     }
@@ -342,8 +345,8 @@ export function ConfigPage() {
       </Card>
 
 
-      {/* ── Admin (collapsible) ────────────────────────────── */}
-      <Section title="Admin" icon={Shield}>
+      {/* ── Quản trị (thu gọn) ─────────────────────────────── */}
+      <Section title={t('config.sections.admin')} icon={Shield}>
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Badge variant={config.admin.password_set ? 'default' : 'secondary'}>
@@ -408,42 +411,42 @@ export function ConfigPage() {
       <Section title={t('config.sections.deepseek')} icon={Cpu}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">API Base</label>
+            <label className="text-sm text-muted-foreground block mb-1">{t('config.deepseek.apiBase')}</label>
             <Input
               value={config.deepseek.api_base}
               onChange={(e) => update(['deepseek', 'api_base'], e.target.value)}
             />
           </div>
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">WASM URL</label>
+            <label className="text-sm text-muted-foreground block mb-1">{t('config.deepseek.wasmUrl')}</label>
             <Input
               value={config.deepseek.wasm_url}
               onChange={(e) => update(['deepseek', 'wasm_url'], e.target.value)}
             />
           </div>
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">User-Agent</label>
+            <label className="text-sm text-muted-foreground block mb-1">{t('config.deepseek.userAgent')}</label>
             <Input
               value={config.deepseek.user_agent}
               onChange={(e) => update(['deepseek', 'user_agent'], e.target.value)}
             />
           </div>
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">Client Version</label>
+            <label className="text-sm text-muted-foreground block mb-1">{t('config.deepseek.clientVersion')}</label>
             <Input
               value={config.deepseek.client_version}
               onChange={(e) => update(['deepseek', 'client_version'], e.target.value)}
             />
           </div>
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">Client Platform</label>
+            <label className="text-sm text-muted-foreground block mb-1">{t('config.deepseek.clientPlatform')}</label>
             <Input
               value={config.deepseek.client_platform}
               onChange={(e) => update(['deepseek', 'client_platform'], e.target.value)}
             />
           </div>
           <div>
-            <label className="text-sm text-muted-foreground block mb-1">Client Locale</label>
+            <label className="text-sm text-muted-foreground block mb-1">{t('config.deepseek.clientLocale')}</label>
             <Input
               value={config.deepseek.client_locale}
               onChange={(e) => update(['deepseek', 'client_locale'], e.target.value)}
@@ -574,7 +577,7 @@ export function ConfigPage() {
               ))}
               <Input
                 className="w-48 h-8 text-xs"
-                placeholder="新标签，回车添加"
+                placeholder={t('config.toolCallTags.placeholder')}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && e.currentTarget.value.trim()) {
                     update(['deepseek', 'tool_call', 'extra_starts'], [
@@ -605,7 +608,7 @@ export function ConfigPage() {
               ))}
               <Input
                 className="w-48 h-8 text-xs"
-                placeholder="新标签，回车添加"
+                placeholder={t('config.toolCallTags.placeholder')}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && e.currentTarget.value.trim()) {
                     update(['deepseek', 'tool_call', 'extra_ends'], [

@@ -58,6 +58,7 @@
     "title": "Configuration",
     "saveSuccess": "Saved successfully, config hot-reloaded",
     "saveFailed": "Save failed",
+    "saveFailedWithReason": "Save failed: {reason}",
     "loadFailed": "Failed to load config",
     "loading": "Loading...",
     "cancelConfirm": "Discard all unsaved changes?",
@@ -166,7 +167,8 @@
     "empty": "No models found"
   },
   "language": {
-    "zh": "中文",
+    "vi": "Tiếng Việt",
+    "zh": "Chinese",
     "en": "English"
   },
   "theme": {

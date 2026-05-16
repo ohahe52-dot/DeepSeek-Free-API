@@ -1,4 +1,4 @@
-//! 持久化存储 —— Config-based admin/auth 数据 + stats.json 的原子读写
+//! Lưu trữ bền vững - dữ liệu admin/auth dựa trên Config + đọc/ghi nguyên tử stats.json
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 
 use crate::config::Config;
 
-/// 管理 stats.json 的数据
+/// Dữ liệu quản lý stats.json
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct StatsStore {
     pub total_requests: u64,
@@ -19,18 +19,18 @@ pub struct StatsStore {
     pub failed_requests: u64,
     pub total_prompt_tokens: u64,
     pub total_completion_tokens: u64,
-    /// 按模型拆分的统计（重启可恢复）
+    /// Thống kê theo model (khôi phục được sau restart)
     #[serde(default)]
     pub model_stats: std::collections::HashMap<String, ModelStatsData>,
-    /// 按 API Key 拆分的统计（重启可恢复，key 为脱敏后的前缀）
+    /// Thống kê theo API Key (khôi phục được sau restart, key là tiền tố đã che)
     #[serde(default)]
     pub key_stats: std::collections::HashMap<String, KeyStatsData>,
-    /// 最近 N 条请求日志（重启可恢复）
+    /// N log request gần nhất (khôi phục được sau restart)
     #[serde(default)]
     pub request_logs: Vec<RequestLogData>,
 }
 
-/// 持久化的模型统计数据
+/// Dữ liệu thống kê model đã lưu
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ModelStatsData {
     pub prompt_tokens: u64,
@@ -38,7 +38,7 @@ pub struct ModelStatsData {
     pub requests: u64,
 }
 
-/// 持久化的 API Key 统计数据
+/// Dữ liệu thống kê API Key đã lưu
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct KeyStatsData {
     pub prompt_tokens: u64,
@@ -46,7 +46,7 @@ pub struct KeyStatsData {
     pub requests: u64,
 }
 
-/// 持久化的请求日志条目
+/// Mục log request đã lưu
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct RequestLogData {
     pub timestamp: u64,
@@ -59,7 +59,7 @@ pub struct RequestLogData {
     pub success: bool,
 }
 
-/// 运行时存储管理器（admin + api_keys → Config，stats → stats.json）
+/// Trình quản lý lưu trữ runtime (admin + api_keys -> Config, stats -> stats.json)
 pub struct StoreManager {
     config_path: PathBuf,
     config: Arc<RwLock<Config>>,
@@ -75,26 +75,26 @@ impl StoreManager {
                 Ok(content) if !content.trim().is_empty() => {
                     match serde_json::from_str::<StatsStore>(&content) {
                         Ok(s) => {
-                            info!(target: "store", "已加载 stats.json");
+                            info!(target: "store", "Đã tải stats.json");
                             s
                         }
                         Err(e) => {
-                            warn!(target: "store", "stats.json 解析失败: {}，使用零值", e);
+                            warn!(target: "store", "Phân tích stats.json thất bại: {}, dùng giá trị 0", e);
                             StatsStore::default()
                         }
                     }
                 }
                 Ok(_) => {
-                    info!(target: "store", "stats.json 为空，使用零值");
+                    info!(target: "store", "stats.json trống, dùng giá trị 0");
                     StatsStore::default()
                 }
                 Err(e) => {
-                    warn!(target: "store", "stats.json 读取失败: {}，使用零值", e);
+                    warn!(target: "store", "Đọc stats.json thất bại: {}, dùng giá trị 0", e);
                     StatsStore::default()
                 }
             }
         } else {
-            info!(target: "store", "stats.json 不存在，使用零值");
+            info!(target: "store", "stats.json không tồn tại, dùng giá trị 0");
             StatsStore::default()
         };
 
@@ -106,18 +106,18 @@ impl StoreManager {
         }
     }
 
-    /// 检查是否已设置密码
+    /// Kiểm tra đã đặt mật khẩu chưa
     pub async fn has_password(&self) -> bool {
         !self.config.read().await.admin.password_hash.is_empty()
     }
 
-    /// 验证密码
+    /// Xác thực mật khẩu
     pub async fn verify_password(&self, plain: &str) -> bool {
         let guard = self.config.read().await;
         bcrypt::verify(plain, &guard.admin.password_hash).unwrap_or(false)
     }
 
-    /// 获取 JWT 密钥
+    /// Lấy khóa JWT
     pub async fn jwt_secret(&self) -> Option<String> {
         let guard = self.config.read().await;
         if guard.admin.jwt_secret.is_empty() {
@@ -127,21 +127,21 @@ impl StoreManager {
         }
     }
 
-    /// 获取最近一次 JWT 签发时间（用于吊销旧 token）
+    /// Lấy thời điểm phát hành JWT gần nhất (dùng để thu hồi token cũ)
     pub async fn jwt_issued_at(&self) -> Option<u64> {
         let guard = self.config.read().await;
         let iat = guard.admin.jwt_issued_at;
         (iat > 0).then_some(iat)
     }
 
-    /// 更新 jwt_issued_at 并持久化
+    /// Cập nhật jwt_issued_at và lưu bền vững
     pub async fn set_jwt_issued_at(&self, iat: u64) {
         let mut guard = self.config.write().await;
         guard.admin.jwt_issued_at = iat;
         let _ = guard.save(&self.config_path);
     }
 
-    /// 保存 admin 配置（密码哈希、JWT 密钥等）
+    /// Lưu cấu hình admin (hash mật khẩu, khóa JWT...)
     pub async fn save_admin(
         &self,
         password_hash: String,
@@ -156,18 +156,18 @@ impl StoreManager {
         Ok(())
     }
 
-    /// 查找 API Key 是否有效
+    /// Kiểm tra API Key có hợp lệ không
     pub async fn is_valid_api_key(&self, key: &str) -> bool {
         let guard = self.config.read().await;
         guard.api_keys.iter().any(|k| k.key == key)
     }
 
-    /// 加载持久化的统计数据
+    /// Tải dữ liệu thống kê đã lưu
     pub async fn load_stats(&self) -> StatsStore {
         self.stats.read().await.clone()
     }
 
-    /// 保存 stats.json
+    /// Lưu stats.json
     pub async fn save_stats(&self, store: &StatsStore) -> anyhow::Result<()> {
         let path = self.base_dir.join("stats.json");
         write_json_file(&path, store)?;
@@ -178,13 +178,13 @@ impl StoreManager {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-/// 原子写入 JSON 文件：先写 .tmp 再 rename
+/// Ghi file JSON nguyên tử: ghi .tmp trước rồi rename
 fn write_json_file<T: Serialize>(path: &Path, data: &T) -> anyhow::Result<()> {
     let tmp_path = path.with_extension("tmp");
     let json = serde_json::to_string_pretty(data)?;
     fs::write(&tmp_path, &json)?;
     fs::rename(&tmp_path, path)?;
-    // 设置文件权限 0600（仅 owner 可读写）
+    // Đặt quyền file 0600 (chỉ owner được đọc/ghi)
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -194,19 +194,19 @@ fn write_json_file<T: Serialize>(path: &Path, data: &T) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 生成随机 hex 字符串（32 字节 = 64 hex 字符）
+/// Tạo chuỗi hex ngẫu nhiên (32 byte = 64 ký tự hex)
 pub fn generate_hex_secret() -> String {
     let mut bytes = [0u8; 32];
     rand::rng().fill(&mut bytes);
     hex::encode(&bytes)
 }
 
-/// 对密码进行 bcrypt 哈希
+/// Hash mật khẩu bằng bcrypt
 pub fn hash_password(plain: &str) -> String {
-    bcrypt::hash(plain, 12).expect("bcrypt hash 不应失败")
+    bcrypt::hash(plain, 12).expect("bcrypt hash không nên thất bại")
 }
 
-// hex 编码辅助（避免额外依赖）
+// Helper mã hóa hex (tránh thêm dependency)
 mod hex {
     pub fn encode(bytes: &[u8]) -> String {
         bytes.iter().map(|b| format!("{:02x}", b)).collect()

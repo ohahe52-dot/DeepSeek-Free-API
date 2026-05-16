@@ -13,7 +13,7 @@ export function clearToken() {
 
 let onUnauthorized: (() => void) | null = null;
 
-/** 注册 401 回调：收到 401 时自动调用（用于 AuthProvider 同步 token 状态） */
+/** Đăng ký callback 401 để AuthProvider đồng bộ trạng thái token. */
 export function setOnUnauthorized(cb: (() => void) | null) {
   onUnauthorized = cb;
 }
@@ -33,11 +33,11 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   if (res.status === 401) {
     clearToken();
     onUnauthorized?.();
-    throw new AuthError('Unauthorized');
+    throw new AuthError('Chưa xác thực');
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error || `API error: ${res.status}`);
+    throw new ApiError(res.status, body.error || `Lỗi API: ${res.status}`);
   }
   return res.json();
 }
@@ -58,7 +58,7 @@ export class ApiError extends Error {
   }
 }
 
-// ── Auth API ──────────────────────────────────────────────────────────────
+// ── API xác thực ──────────────────────────────────────────────────────────
 
 export interface LoginResponse {
   token: string;

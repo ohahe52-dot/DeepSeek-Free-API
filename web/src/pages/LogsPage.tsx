@@ -23,7 +23,9 @@ import { useTranslation } from 'react-i18next';
 const PAGE_SIZE = 50;
 
 function formatTime(ts: number, locale: string): string {
-  return new Date(ts * 1000).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US');
+  const normalized = locale.split('-')[0];
+  const browserLocale = normalized === 'zh' ? 'zh-CN' : normalized === 'en' ? 'en-US' : 'vi-VN';
+  return new Date(ts * 1000).toLocaleString(browserLocale);
 }
 
 function formatTokens(n: number): string {
@@ -59,7 +61,7 @@ const levelColor = (level: string) => {
   }
 };
 
-// ── 请求日志 Tab ──────────────────────────────────────────────────────────
+// ── Tab nhật ký yêu cầu ───────────────────────────────────────────────────
 
 function RequestLogsTab() {
   const { t, i18n } = useTranslation();
@@ -134,7 +136,7 @@ function RequestLogsTab() {
   );
 }
 
-// ── 运行日志 Tab ──────────────────────────────────────────────────────────
+// ── Tab nhật ký runtime ───────────────────────────────────────────────────
 
 function RuntimeLogsTab() {
   const { t } = useTranslation();
@@ -202,7 +204,7 @@ function RuntimeLogsTab() {
           </TableBody>
         </Table>
 
-        {/* Pagination */}
+        {/* Phân trang */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t">
             <span className="text-sm text-muted-foreground">
@@ -235,7 +237,7 @@ function RuntimeLogsTab() {
   );
 }
 
-// ── 主页面 ────────────────────────────────────────────────────────────────
+// ── Trang chính ───────────────────────────────────────────────────────────
 
 export function LogsPage() {
   const { t } = useTranslation();
@@ -248,7 +250,7 @@ export function LogsPage() {
         {t('logs.title')}
       </h1>
 
-      {/* Tab switcher */}
+        {/* Bộ đổi tab */}
       <div className="flex gap-2">
         <Button
           variant={tab === 'request' ? 'default' : 'outline'}

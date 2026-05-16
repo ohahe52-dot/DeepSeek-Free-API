@@ -1,12 +1,12 @@
 {
-  "name": "流式对话",
+  "name": "Hoi thoai stream",
   "endpoint": "openai",
   "category": "basic",
   "models": ["deepseek-default"],
   "request": {
     "messages": [
-      {"role": "system", "content": "你是 ds-free-api 助手。"},
-      {"role": "user", "content": "你好，请逐字回复「分野」这个字的意思。"}
+      {"role": "system", "content": "Ban la tro ly ds-free-api."},
+      {"role": "user", "content": "Xin chao, hay giai thich tung chu y nghia cua tu 'phan dinh'."}
     ],
     "stream": true,
     "temperature": 0.7

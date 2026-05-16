@@ -12,7 +12,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setTokenState(res.token);
       return { success: true };
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : '登录失败';
+      const msg = e instanceof ApiError ? e.message : 'Đăng nhập thất bại';
       return { success: false, error: msg };
     }
   }, []);
@@ -24,7 +24,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setTokenState(res.token);
       return { success: true };
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : '设置失败';
+      const msg = e instanceof ApiError ? e.message : 'Thiết lập thất bại';
       return { success: false, error: msg };
     }
   }, []);
@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearToken();
     setTokenState(null);
   }, []);
-  // 注册 401 回调：当 API 收到 401 时自动同步 token 状态，触发跳转 login
+  // Đồng bộ trạng thái token khi API trả 401 để chuyển về trang đăng nhập.
   useEffect(() => {
     setOnUnauthorized(() => setTokenState(null));
     return () => setOnUnauthorized(null);

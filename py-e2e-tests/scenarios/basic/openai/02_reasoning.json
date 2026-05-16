@@ -1,11 +1,11 @@
 {
-  "name": "深度思考",
+  "name": "Suy luan sau",
   "endpoint": "openai",
   "category": "basic",
   "models": ["deepseek-default", "deepseek-expert"],
   "request": {
     "messages": [
-      {"role": "user", "content": "请用中文解释量子纠缠，要求包含深度思考"}
+      {"role": "user", "content": "Hay giai thich hien tuong roi luong tu bang tieng Viet, co suy luan sau"}
     ],
     "stream": false
   },

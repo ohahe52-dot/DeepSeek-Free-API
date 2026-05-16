@@ -1,4 +1,4 @@
-//! 请求统计 —— 轻量级原子计数器 + 定期持久化 + 按模型拆分
+//! Thống kê request - atomic counter nhẹ + lưu định kỳ + tách theo model
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -11,12 +11,12 @@ use serde::Serialize;
 
 use super::store::StoreManager;
 
-/// 持久化间隔：每 30 次请求写盘一次
+/// Khoảng lưu bền vững: ghi đĩa mỗi 30 request
 const PERSIST_INTERVAL: u64 = 30;
-/// 请求日志最大条数
+/// Số log request tối đa
 const LOG_CAPACITY: usize = 200;
 
-/// 单个模型的统计计数器
+/// Counter thống kê cho một model
 pub struct ModelStats {
     pub prompt_tokens: AtomicU64,
     pub completion_tokens: AtomicU64,
@@ -33,7 +33,7 @@ impl ModelStats {
     }
 }
 
-/// 单个 API Key 的统计计数器
+/// Counter thống kê cho một API Key
 pub struct KeyUsage {
     pub prompt_tokens: AtomicU64,
     pub completion_tokens: AtomicU64,
@@ -50,7 +50,7 @@ impl KeyUsage {
     }
 }
 
-/// 单条请求日志
+/// Một log request
 #[derive(Serialize, Clone)]
 pub struct RequestLog {
     pub timestamp: u64,
@@ -63,7 +63,7 @@ pub struct RequestLog {
     pub success: bool,
 }
 
-/// 请求统计计数器
+/// Counter thống kê request
 pub struct Stats {
     pub total_requests: AtomicU64,
     pub success_requests: AtomicU64,
@@ -72,20 +72,20 @@ pub struct Stats {
     pub total_prompt_tokens: AtomicU64,
     pub total_completion_tokens: AtomicU64,
     pub start_time: Instant,
-    /// 上次持久化时的 total_requests 值
+    /// Giá trị total_requests ở lần lưu bền vững trước
     last_persisted: AtomicU64,
-    /// 持久化存储
+    /// Lưu trữ bền vững
     store: Option<Arc<StoreManager>>,
-    /// 按模型拆分的统计
+    /// Thống kê tách theo model
     pub model_stats: DashMap<String, ModelStats>,
-    /// 按 API Key 拆分的统计
+    /// Thống kê tách theo API Key
     pub key_stats: DashMap<String, KeyUsage>,
-    /// 请求日志环形缓冲区
+    /// Ring buffer log request
     pub request_logs: Mutex<VecDeque<RequestLog>>,
 }
 
 impl Stats {
-    /// 创建 Stats，可选从持久化数据恢复（含模型/Key 维度统计 + 请求日志）
+    /// Tạo Stats, có thể khôi phục từ dữ liệu đã lưu (gồm thống kê theo model/key + log request)
     pub fn new_with_store(store: Option<Arc<StoreManager>>) -> Self {
         let (
             total_requests,
@@ -113,7 +113,7 @@ impl Stats {
             },
         );
 
-        // 恢复模型统计
+        // Khôi phục thống kê model
         let model_stats: DashMap<String, ModelStats> = DashMap::new();
         for (model, data) in &model_stats_data {
             model_stats.insert(
@@ -126,7 +126,7 @@ impl Stats {
             );
         }
 
-        // 恢复 Key 统计
+        // Khôi phục thống kê key
         let key_stats: DashMap<String, KeyUsage> = DashMap::new();
         for (key, data) in &key_stats_data {
             key_stats.insert(
@@ -139,7 +139,7 @@ impl Stats {
             );
         }
 
-        // 恢复请求日志（最多 LOG_CAPACITY 条）
+        // Khôi phục log request (tối đa LOG_CAPACITY mục)
         let mut logs = VecDeque::with_capacity(LOG_CAPACITY);
         for entry in logs_data.iter().rev().take(LOG_CAPACITY).rev() {
             logs.push_back(super::stats::RequestLog {
@@ -158,7 +158,7 @@ impl Stats {
             total_requests: AtomicU64::new(total_requests),
             success_requests: AtomicU64::new(success_requests),
             failed_requests: AtomicU64::new(failed_requests),
-            total_latency_ms: AtomicU64::new(0), // latency 不持久化
+            total_latency_ms: AtomicU64::new(0), // latency không lưu bền vững
             total_prompt_tokens: AtomicU64::new(prompt_tokens),
             total_completion_tokens: AtomicU64::new(completion_tokens),
             start_time: Instant::now(),
@@ -170,7 +170,7 @@ impl Stats {
         }
     }
 
-    /// 追加请求日志
+    /// Thêm log request
     pub fn append_log(&self, log: RequestLog) {
         let mut logs = self.request_logs.lock().unwrap();
         if logs.len() >= LOG_CAPACITY {
@@ -179,13 +179,13 @@ impl Stats {
         logs.push_back(log);
     }
 
-    /// 获取最近的请求日志
+    /// Lấy log request gần nhất
     pub fn recent_logs(&self, limit: usize) -> Vec<RequestLog> {
         let logs = self.request_logs.lock().unwrap();
         logs.iter().rev().take(limit).cloned().collect()
     }
 
-    /// 记录 token 用量（含模型 + API Key 维度）
+    /// Ghi nhận mức dùng token (gồm chiều model + API Key)
     pub fn record_tokens_for_model_and_key(
         &self,
         model: &str,
@@ -197,7 +197,7 @@ impl Stats {
             .fetch_add(prompt_tokens, Ordering::Relaxed);
         self.total_completion_tokens
             .fetch_add(completion_tokens, Ordering::Relaxed);
-        // 按模型记录
+        // Ghi theo model
         let ms = self
             .model_stats
             .entry(model.to_string())
@@ -206,7 +206,7 @@ impl Stats {
         ms.completion_tokens
             .fetch_add(completion_tokens, Ordering::Relaxed);
         ms.requests.fetch_add(1, Ordering::Relaxed);
-        // 按 API Key 记录
+        // Ghi theo API Key
         if let Some(key) = api_key {
             let ku = self
                 .key_stats
@@ -219,7 +219,7 @@ impl Stats {
         }
     }
 
-    /// 记录一次请求完成
+    /// Ghi nhận một request hoàn tất
     pub fn record_request(&self, success: bool, latency_ms: u64) {
         self.total_requests.fetch_add(1, Ordering::Relaxed);
         if success {
@@ -232,7 +232,7 @@ impl Stats {
         self.maybe_persist();
     }
 
-    /// 检查是否需要持久化
+    /// Kiểm tra có cần lưu bền vững không
     fn maybe_persist(&self) {
         let total = self.total_requests.load(Ordering::Relaxed);
         let last = self.last_persisted.load(Ordering::Relaxed);
@@ -246,7 +246,7 @@ impl Stats {
         }
     }
 
-    /// 立即持久化当前统计（含模型/Key 维度 + 请求日志）
+    /// Lưu bền vững thống kê hiện tại ngay (gồm chiều model/key + log request)
     pub fn persist_now(&self) {
         if let Some(ref store) = self.store {
             let model_stats: HashMap<String, super::store::ModelStatsData> = self
@@ -311,13 +311,13 @@ impl Stats {
             let store = store.clone();
             tokio::spawn(async move {
                 if let Err(e) = store.save_stats(&st).await {
-                    log::warn!(target: "stats", "持久化失败: {}", e);
+                    log::warn!(target: "stats", "Ghi dữ liệu thất bại: {}", e);
                 }
             });
         }
     }
 
-    /// 生成统计快照
+    /// Tạo snapshot thống kê
     pub fn snapshot(&self) -> StatsSnapshot {
         let total = self.total_requests.load(Ordering::Relaxed);
         let success = self.success_requests.load(Ordering::Relaxed);
@@ -354,12 +354,12 @@ impl Stats {
         }
     }
 
-    /// 生成 API Key 维度统计快照
+    /// Tạo snapshot thống kê theo chiều API Key
     pub fn key_stats_snapshot(&self) -> HashMap<String, KeyUsageSnapshot> {
         self.key_stats
             .iter()
             .map(|r| {
-                // 脱敏：只显示前 8 位
+                // Che dữ liệu: chỉ hiển thị 8 ký tự đầu
                 let masked = if r.key().len() > 8 {
                     format!("{}***", &r.key()[..8])
                 } else {
@@ -405,8 +405,8 @@ pub struct KeyUsageSnapshot {
     pub requests: u64,
 }
 
-/// 请求计时守卫，Drop 时自动记录统计
-/// 如果未调用 mark_success/mark_failure，Drop 默认记录为失败
+/// Guard đo thời gian request, tự ghi thống kê khi Drop
+/// Nếu chưa gọi mark_success/mark_failure, Drop mặc định ghi là thất bại
 pub struct RequestTimer {
     stats: Arc<Stats>,
     start: Instant,
@@ -434,7 +434,7 @@ impl Drop for RequestTimer {
 }
 
 impl RequestTimer {
-    /// 标记请求成功并记录统计
+    /// Đánh dấu request thành công và ghi thống kê
     pub fn mark_success(mut self) {
         let elapsed = self.start.elapsed();
         let latency = elapsed.as_secs() * 1000 + u64::from(elapsed.subsec_millis());
@@ -442,7 +442,7 @@ impl RequestTimer {
         self.marked = true;
     }
 
-    /// 标记请求失败并记录统计
+    /// Đánh dấu request thất bại và ghi thống kê
     pub fn mark_failure(mut self) {
         let elapsed = self.start.elapsed();
         let latency = elapsed.as_secs() * 1000 + u64::from(elapsed.subsec_millis());

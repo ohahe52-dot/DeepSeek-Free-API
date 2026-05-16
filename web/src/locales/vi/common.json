@@ -1,0 +1,191 @@
+{
+  "nav": {
+    "dashboard": "Tổng quan",
+    "models": "Mô hình",
+    "config": "Cấu hình",
+    "logs": "Nhật ký",
+    "logout": "Đăng xuất"
+  },
+  "login": {
+    "title": "DS Free API",
+    "setupDescription": "Lần đầu sử dụng, hãy đặt mật khẩu quản trị",
+    "loginDescription": "Nhập mật khẩu để vào bảng quản trị",
+    "passwordLabel": "Mật khẩu",
+    "confirmPasswordLabel": "Xác nhận mật khẩu",
+    "setPasswordLabel": "Đặt mật khẩu",
+    "passwordPlaceholder": "Mật khẩu quản trị",
+    "setPasswordPlaceholder": "Tối thiểu 6 ký tự",
+    "confirmPasswordPlaceholder": "Nhập lại mật khẩu",
+    "setupButton": "Đặt mật khẩu",
+    "loginButton": "Đăng nhập",
+    "errorPasswordLength": "Mật khẩu phải có tối thiểu 6 ký tự",
+    "errorPasswordMismatch": "Hai mật khẩu không khớp",
+    "errorSetupFailed": "Thiết lập thất bại",
+    "errorLoginFailed": "Đăng nhập thất bại",
+    "checking": "Đang kiểm tra...",
+    "settingUp": "Đang thiết lập...",
+    "verifying": "Đang xác minh..."
+  },
+  "dashboard": {
+    "title": "Tổng quan",
+    "stats": {
+      "totalRequests": "Tổng yêu cầu",
+      "successRate": "Tỷ lệ thành công",
+      "avgLatency": "Độ trễ TB",
+      "uptime": "Thời gian chạy",
+      "totalTokens": "Tổng token",
+      "promptTokens": "Token đầu vào",
+      "completionTokens": "Token đầu ra",
+      "models": "Thống kê mô hình",
+      "model": "Mô hình",
+      "requests": "Yêu cầu",
+      "prompt": "Token đầu vào",
+      "completion": "Token đầu ra",
+      "days": " ngày",
+      "hours": " giờ",
+      "minutes": " phút"
+    },
+    "accountPool": {
+      "title": "Nhóm tài khoản",
+      "total": "Tổng",
+      "idle": "Rảnh",
+      "busy": "Bận",
+      "error": "Lỗi",
+      "invalid": "Không hợp lệ"
+    }
+  },
+  "config": {
+    "title": "Cấu hình",
+    "saveSuccess": "Đã lưu, cấu hình đã nạp nóng",
+    "saveFailed": "Lưu thất bại",
+    "saveFailedWithReason": "Lưu thất bại: {reason}",
+    "loadFailed": "Không tải được cấu hình",
+    "loading": "Đang tải...",
+    "cancelConfirm": "Bỏ mọi thay đổi chưa lưu?",
+    "saving": "Đang lưu...",
+    "cancel": "Hủy",
+    "save": "Lưu cấu hình",
+    "sections": {
+      "accounts": "Tài khoản",
+      "apiKeys": "API Key",
+      "admin": "Quản trị",
+      "server": "Máy chủ",
+      "deepseek": "DeepSeek",
+      "models": "Loại mô hình",
+      "toolCallTags": "Thẻ gọi công cụ",
+      "proxy": "Proxy"
+    },
+    "accounts": {
+      "email": "Email",
+      "mobile": "Số điện thoại",
+      "areaCode": "Mã vùng",
+      "password": "Mật khẩu",
+      "add": "Thêm tài khoản"
+    },
+    "apiKeys": {
+      "description": "Mô tả",
+      "placeholder": "Mô tả",
+      "add": "Thêm API Key",
+      "copyTitle": "Sao chép"
+    },
+    "admin": {
+      "passwordSet": "Đã đặt mật khẩu",
+      "passwordNotSet": "Chưa đặt mật khẩu",
+      "oldPassword": "Mật khẩu cũ",
+      "newPassword": "Mật khẩu mới",
+      "oldPasswordPlaceholder": "Nhập mật khẩu cũ để đổi",
+      "newPasswordPlaceholder": "Tối thiểu 6 ký tự"
+    },
+    "server": {
+      "host": "Địa chỉ lắng nghe",
+      "port": "Cổng",
+      "corsOrigins": "Nguồn CORS (cách nhau bằng dấu phẩy)"
+    },
+    "deepseek": {
+      "apiBase": "API Base",
+      "wasmUrl": "WASM URL",
+      "userAgent": "User-Agent",
+      "clientVersion": "Phiên bản client",
+      "clientPlatform": "Nền tảng client",
+      "clientLocale": "Ngôn ngữ client"
+    },
+    "modelsSection": {
+      "typeName": "Tên loại",
+      "maxInput": "Đầu vào tối đa",
+      "maxOutput": "Đầu ra tối đa",
+      "inputCharLimit": "Số ký tự đầu vào",
+      "alias": "Bí danh (tùy chọn)",
+      "add": "Thêm loại mô hình"
+    },
+    "toolCallTags": {
+      "extraStarts": "Thẻ bắt đầu bổ sung",
+      "extraEnds": "Thẻ kết thúc bổ sung",
+      "placeholder": "Thẻ mới, nhấn Enter để thêm"
+    },
+    "proxy": {
+      "url": "Proxy URL (để trống để tắt)",
+      "placeholder": "http://127.0.0.1:7890"
+    }
+  },
+  "logs": {
+    "title": "Nhật ký",
+    "tabs": {
+      "request": "Nhật ký yêu cầu",
+      "runtime": "Nhật ký chạy"
+    },
+    "requestLogs": {
+      "description": "100 yêu cầu gần nhất (tự làm mới mỗi 5 giây)",
+      "time": "Thời gian",
+      "model": "Mô hình",
+      "apiKey": "API Key",
+      "promptTokens": "Đầu vào",
+      "completionTokens": "Đầu ra",
+      "latency": "Độ trễ",
+      "status": "Trạng thái",
+      "success": "Thành công",
+      "failure": "Thất bại",
+      "loading": "Đang tải...",
+      "empty": "Chưa có nhật ký yêu cầu"
+    },
+    "runtimeLogs": {
+      "description": "Nhật ký chạy (tổng {total}, tự làm mới mỗi 3 giây)",
+      "time": "Thời gian",
+      "level": "Mức",
+      "module": "Module",
+      "message": "Tin nhắn",
+      "loading": "Đang tải...",
+      "empty": "Chưa có nhật ký chạy",
+      "pageInfo": "Trang {current} / {total}",
+      "prev": "Trước",
+      "next": "Sau"
+    }
+  },
+  "models": {
+    "title": "Mô hình",
+    "type": "Loại",
+    "loading": "Đang tải...",
+    "empty": "Không tìm thấy mô hình"
+  },
+  "language": {
+    "vi": "Tiếng Việt",
+    "zh": "Tiếng Trung",
+    "en": "English"
+  },
+  "theme": {
+    "system": "Theo hệ thống",
+    "light": "Sáng",
+    "dark": "Tối",
+    "toggle": "Bấm để đổi giao diện"
+  },
+  "common": {
+    "loading": "Đang tải...",
+    "save": "Lưu",
+    "cancel": "Hủy",
+    "delete": "Xóa",
+    "copy": "Sao chép",
+    "copied": "Đã sao chép",
+    "confirm": "Xác nhận",
+    "success": "Thành công",
+    "error": "Lỗi"
+  }
+}

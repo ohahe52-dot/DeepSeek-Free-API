@@ -18,7 +18,7 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
 
-  // Check if setup is needed by trying login endpoint
+  // Kiểm tra có cần setup bằng cách thử endpoint đăng nhập.
   useEffect(() => {
     (async () => {
       try {
@@ -28,8 +28,8 @@ export function LoginPage() {
           body: JSON.stringify({ password: '__check__' }),
         });
         await res.json().catch(() => ({}));
-        // 403 = "未设置密码" → needs setup
-        // 401 = "密码错误" → login mode
+        // 403 = chưa đặt mật khẩu -> cần setup
+        // 401 = sai mật khẩu -> chế độ đăng nhập
         setNeedsSetup(res.status === 403);
       } catch {
         setNeedsSetup(false);

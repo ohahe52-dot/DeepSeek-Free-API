@@ -1,7 +1,7 @@
 {
   "model": "deepseek-default",
   "messages": [
-    { "role": "user", "content": "输出 A B C D E F G" }
+    { "role": "user", "content": "Xuat A B C D E F G" }
   ],
   "stop": ["D"]
 }

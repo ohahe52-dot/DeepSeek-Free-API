@@ -1,7 +1,7 @@
-//! Anthropic 响应映射 —— 将 OpenAI ChatCompletion 映射为 Anthropic Message
+//! Map response Anthropic - map OpenAI ChatCompletion thành Anthropic Message
 //!
-//! 门面模块：声明子模块，暴露共享类型和辅助函数。
-//! `MessagesResponse` / `Usage` 定义在 `types.rs`（与请求类型同模块）。
+//! Module facade: khai báo module con, xuất kiểu dùng chung và helper.
+//! `MessagesResponse` / `Usage` được định nghĩa trong `types.rs` (cùng module với kiểu request).
 
 mod aggregate;
 mod stream;
@@ -9,11 +9,11 @@ mod stream;
 pub(crate) use aggregate::from_chat_completions;
 pub(crate) use stream::from_chat_completion_stream;
 
-/// 响应内容块——在 `types.rs` 中定义为 `ResponseContentBlock`，此处别名保持子模块兼容
+/// Block nội dung response - định nghĩa trong `types.rs` là `ResponseContentBlock`, alias ở đây để giữ tương thích module con
 pub(crate) use crate::anthropic_compat::types::ResponseContentBlock as ContentBlock;
 
 // ============================================================================
-// 共享辅助函数
+// Helper dùng chung
 // ============================================================================
 
 pub(crate) fn finish_reason_map(reason: &str) -> String {
@@ -24,7 +24,7 @@ pub(crate) fn finish_reason_map(reason: &str) -> String {
     }
 }
 
-/// OpenAI id 格式为 chatcmpl-xxx，映射为 msg_xxx
+/// OpenAI id có format chatcmpl-xxx, map thành msg_xxx
 pub(crate) fn map_id(openai_id: &str) -> String {
     openai_id
         .strip_prefix("chatcmpl-")

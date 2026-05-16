@@ -1,6 +1,6 @@
-//! Anthropic 请求映射 —— MessagesRequest → ChatCompletionsRequest 结构体转换
+//! Map request Anthropic - chuyển struct MessagesRequest -> ChatCompletionsRequest
 //!
-//! 纯函数：不接受 JSON 字节，直接做结构体到结构体的字段映射。
+//! Hàm thuần: không nhận byte JSON, map trực tiếp field từ struct sang struct.
 
 use crate::anthropic_compat::types::{
     ContentBlock, ImageSource, MessageContent, MessageParam, MessagesRequest, SystemContent,
@@ -13,12 +13,12 @@ use crate::openai_adapter::types::{
 };
 
 // ============================================================================
-// 映射函数
+// Hàm map
 // ============================================================================
 
-/// 将 Anthropic MessagesRequest 直接映射为 ChatCompletionsRequest 结构体
+/// Map trực tiếp MessagesRequest của Anthropic thành struct ChatCompletionsRequest
 pub(crate) fn into_chat_completions(req: MessagesRequest) -> ChatCompletionsRequest {
-    // messages: system 前置 + messages 转换
+    // messages: đặt system trước + chuyển messages
     let mut messages = Vec::new();
     if let Some(ref system) = req.system {
         messages.push(system_to_message(system));
@@ -67,7 +67,7 @@ pub(crate) fn into_chat_completions(req: MessagesRequest) -> ChatCompletionsRequ
         reasoning_effort,
         response_format,
         web_search_options,
-        // 其余字段保持默认
+        // Các field còn lại giữ mặc định
         audio: None,
         frequency_penalty: None,
         function_call: None,
@@ -98,7 +98,7 @@ pub(crate) fn into_chat_completions(req: MessagesRequest) -> ChatCompletionsRequ
 }
 
 // ============================================================================
-// 辅助函数
+// Hàm hỗ trợ
 // ============================================================================
 
 fn empty_message(role: String, content: OaiMessageContent) -> Message {
@@ -150,7 +150,7 @@ fn message_param_to_messages(msg: &MessageParam) -> Vec<Message> {
     }
 }
 
-/// 将 assistant 的 content blocks 映射为 OpenAI 消息
+/// Map content block của assistant thành message OpenAI
 fn assistant_blocks_to_messages(blocks: &[ContentBlock]) -> Vec<Message> {
     let mut texts = Vec::new();
     let mut tool_calls = Vec::new();
@@ -221,7 +221,7 @@ fn infer_doc_filename(mime: &str) -> String {
     format!("document.{}", ext)
 }
 
-/// 将 user 的 content blocks 映射为 OpenAI 消息
+/// Map content block của user thành message OpenAI
 fn user_blocks_to_messages(blocks: &[ContentBlock]) -> Vec<Message> {
     let mut text_parts = Vec::new();
     let mut image_parts = Vec::new();
@@ -248,12 +248,12 @@ fn user_blocks_to_messages(blocks: &[ContentBlock]) -> Vec<Message> {
                         .as_deref()
                         .filter(|t| !t.is_empty())
                         .unwrap_or(&filename);
-                    text_parts.push(format!("[文件: {}]", desc));
+                    text_parts.push(format!("[Tệp: {}]", desc));
                     file_parts.push(FilePart { data_url, filename });
                 }
                 ImageSource::Url { url } => {
-                    // 利用 image_url part + HTTP URL 触发搜索模式
-                    // format_part 会输出 [请访问这个链接: {url}]
+                    // Dùng image_url part + HTTP URL để kích hoạt search mode
+                    // format_part sẽ xuất [Hãy truy cập liên kết này: {url}]
                     image_parts.push(url.clone());
                 }
             },
@@ -286,7 +286,7 @@ fn user_blocks_to_messages(blocks: &[ContentBlock]) -> Vec<Message> {
 
     let mut result = Vec::new();
 
-    // 文本 + 图片 + 文件合并为一个 user message
+    // Gộp text + ảnh + file thành một user message
     if !text_parts.is_empty() || !image_parts.is_empty() || !file_parts.is_empty() {
         if image_parts.is_empty() && file_parts.is_empty() {
             result.push(empty_message(
@@ -294,7 +294,7 @@ fn user_blocks_to_messages(blocks: &[ContentBlock]) -> Vec<Message> {
                 OaiMessageContent::Text(text_parts.join("\n")),
             ));
         } else {
-            // 包含图片：使用 parts 数组
+            // Có ảnh: dùng mảng parts
             let mut parts = Vec::new();
             for text in &text_parts {
                 parts.push(ContentPart {
@@ -346,7 +346,7 @@ fn user_blocks_to_messages(blocks: &[ContentBlock]) -> Vec<Message> {
         }
     }
 
-    // tool_result 作为独立的 tool role messages
+    // tool_result thành message role tool riêng
     result.extend(tool_results);
 
     result
@@ -430,7 +430,7 @@ impl ToolChoice {
 }
 
 // ============================================================================
-// 测试
+// Test
 // ============================================================================
 
 #[cfg(test)]
@@ -753,7 +753,7 @@ mod tests {
 
     #[test]
     fn image_source_mapped() {
-        // base64 和 url 两种 image source 都映射为 image_url content part
+        // Cả hai image source base64 và url đều map thành content part image_url
         let cases = [
             (
                 r#"{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": "abc123"}}"#,

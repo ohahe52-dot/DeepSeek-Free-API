@@ -1,6 +1,6 @@
-//! Anthropic Models API 响应生成
+//! Tạo response Anthropic Models API
 //!
-//! 基于 openai_adapter 的 ModelList，转换为 Anthropic /v1/models 响应格式。
+//! Chuyển ModelList của openai_adapter thành format response Anthropic /v1/models.
 
 use log::debug;
 
@@ -10,10 +10,10 @@ use crate::openai_adapter::types::OpenAIModel;
 use crate::openai_adapter::types::OpenAIModelList;
 
 // ============================================================================
-// Anthropic 协议类型
+// Kiểu giao thức Anthropic
 // ============================================================================
 
-/// 模型能力信息
+/// Thông tin năng lực model
 #[derive(Debug, Serialize, Deserialize)]
 struct ModelCapabilities {
     thinking: ThinkingCapability,
@@ -22,27 +22,27 @@ struct ModelCapabilities {
     structured_outputs: CapabilitySupport,
 }
 
-/// Thinking 能力
+/// Năng lực thinking
 #[derive(Debug, Serialize, Deserialize)]
 struct ThinkingCapability {
     supported: bool,
     types: ThinkingTypes,
 }
 
-/// Thinking 类型支持
+/// Hỗ trợ kiểu thinking
 #[derive(Debug, Serialize, Deserialize)]
 struct ThinkingTypes {
     enabled: CapabilitySupport,
     adaptive: CapabilitySupport,
 }
 
-/// 单项能力支持
+/// Hỗ trợ từng năng lực
 #[derive(Debug, Serialize, Deserialize)]
 struct CapabilitySupport {
     supported: bool,
 }
 
-/// 单个模型信息
+/// Thông tin một model
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AnthropicModel {
     id: String,
@@ -57,7 +57,7 @@ pub struct AnthropicModel {
     capabilities: ModelCapabilities,
 }
 
-/// 模型列表响应
+/// Response danh sách model
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AnthropicModelList {
     data: Vec<AnthropicModel>,
@@ -67,12 +67,12 @@ pub struct AnthropicModelList {
 }
 
 // ============================================================================
-// 响应生成
+// Tạo response
 // ============================================================================
 
-/// 根据 OpenAI ModelList 生成 Anthropic 格式响应
+/// Tạo response format Anthropic từ OpenAI ModelList
 pub(crate) fn list(list: &OpenAIModelList) -> AnthropicModelList {
-    debug!(target: "anthropic_compat::models", "生成模型列表");
+    debug!(target: "anthropic_compat::models", "Tạo danh sách mô hình");
 
     let data: Vec<AnthropicModel> = list.data.iter().map(to_anthropic_model).collect();
 
@@ -87,7 +87,7 @@ pub(crate) fn list(list: &OpenAIModelList) -> AnthropicModelList {
     }
 }
 
-/// 查询单个模型
+/// Truy vấn một model
 pub(crate) fn get(list: &OpenAIModelList, model_id: &str) -> Option<AnthropicModel> {
     list.data
         .iter()
@@ -96,7 +96,7 @@ pub(crate) fn get(list: &OpenAIModelList, model_id: &str) -> Option<AnthropicMod
 }
 
 // ============================================================================
-// 模型映射
+// Map model
 // ============================================================================
 
 fn to_anthropic_model(m: &OpenAIModel) -> AnthropicModel {
@@ -124,7 +124,7 @@ fn to_anthropic_model(m: &OpenAIModel) -> AnthropicModel {
     }
 }
 
-/// 将 "deepseek-expert" 解析为 "DeepSeek Expert"
+/// Parse "deepseek-expert" thành "DeepSeek Expert"
 fn id_to_display_name(id: &str) -> String {
     id.split('-')
         .map(|word| {
@@ -141,7 +141,7 @@ fn id_to_display_name(id: &str) -> String {
         .join(" ")
 }
 
-/// 将 Unix 时间戳（秒）转为 RFC 3339 格式字符串（UTC）
+/// Chuyển Unix timestamp (giây) thành chuỗi format RFC 3339 (UTC)
 fn unix_to_rfc3339(secs: u64) -> String {
     let days = secs / 86_400;
     let rem_secs = secs % 86_400;
@@ -199,7 +199,7 @@ fn is_leap_year(y: u64) -> bool {
 }
 
 // ============================================================================
-// 测试
+// Test
 // ============================================================================
 
 #[cfg(test)]

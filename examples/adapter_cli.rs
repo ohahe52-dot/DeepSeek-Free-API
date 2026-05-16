@@ -1,21 +1,21 @@
-//! 统一协议调试 CLI
+//! CLI debug giao thức thống nhất
 //!
-//! 接受 OpenAI JSON 请求体，支持输出原始 DeepSeek SSE、转换后的 OpenAI SSE 或两者对照。
+//! Nhận body request JSON OpenAI, hỗ trợ xuất DeepSeek SSE gốc, OpenAI SSE đã chuyển đổi hoặc đối chiếu cả hai.
 //!
-//! 使用方式:
-//!   交互模式: cargo run --example adapter_cli
-//!   脚本模式: cargo run --example adapter_cli -- source examples/adapter_cli-script.txt
+//! Cách dùng:
+//!   Chế độ tương tác: cargo run --example adapter_cli
+//!   Chế độ script: cargo run --example adapter_cli -- source examples/adapter_cli-script.txt
 //!
-//! 命令:
-//!   chat <json_file>                       - OpenAI 转换后输出
-//!   raw <json_file>                        - 原始 DeepSeek SSE（转换前）
-//!   compare <json_file>                    - 上下对照两种流
-//!   concurrent <n> <json_file>             - 并发请求
-//!   models                                 - 列出可用模型
-//!   model <id>                             - 查询单个模型
-//!   status                                 - 查看账号池状态
-//!   source <file>                          - 从文件读取命令执行
-//!   quit | exit                            - 退出并清理
+//! Lệnh:
+//!   chat <json_file>                       - Output sau khi chuyển đổi OpenAI
+//!   raw <json_file>                        - DeepSeek SSE gốc (trước chuyển đổi)
+//!   compare <json_file>                    - Đối chiếu hai stream
+//!   concurrent <n> <json_file>             - Request đồng thời
+//!   models                                 - Liệt kê model khả dụng
+//!   model <id>                             - Truy vấn một model
+//!   status                                 - Xem trạng thái pool tài khoản
+//!   source <file>                          - Đọc lệnh từ file và chạy
+//!   quit | exit                            - Thoát và dọn dẹp
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -57,10 +57,10 @@ async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::new().default_filter_or("info")).init();
 
     let (config, _config_path) = Config::load_with_args(std::env::args())?;
-    println!("[初始化中...]");
+    println!("[Dang khoi tao...]");
     let adapter = OpenAIAdapter::new(&config).await?;
     println!(
-        "[就绪] 命令: chat | raw | compare | concurrent | models | model | status | source | quit"
+        "[San sang] Lenh: chat | raw | compare | concurrent | models | model | status | source | quit"
     );
 
     let mut stdout = io::stdout();
@@ -80,9 +80,9 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    println!("[清理中...]");
+    println!("[Dang don dep...]");
     adapter.shutdown().await;
-    println!("[已关闭]");
+    println!("[Da dong]");
 
     Ok(())
 }
@@ -106,7 +106,7 @@ async fn handle_line(line: &str, adapter: &OpenAIAdapter) -> anyhow::Result<bool
     let cmd = parts[0];
     match cmd {
         "status" => {
-            println!("[账号状态]");
+            println!("[Trang thai tai khoan]");
             for (i, s) in adapter.account_statuses().iter().enumerate() {
                 let email = if s.email.is_empty() { "-" } else { &s.email };
                 let mobile = if s.mobile.is_empty() { "-" } else { &s.mobile };
@@ -129,7 +129,7 @@ async fn handle_line(line: &str, adapter: &OpenAIAdapter) -> anyhow::Result<bool
                     while let Some(chunk) = s.next().await {
                         match chunk {
                             Ok(c) => println!("{}", serde_json::to_string(&c).unwrap()),
-                            Err(e) => eprintln!("流错误: {}", e),
+                            Err(e) => eprintln!("Loi stream: {}", e),
                         }
                     }
                 }
@@ -152,7 +152,7 @@ async fn handle_line(line: &str, adapter: &OpenAIAdapter) -> anyhow::Result<bool
             let body = load_json(file)?;
             println!(">>> compare: {}", file);
 
-            // 原始流
+            // Stream gốc
             let rid1 = demo_req_id();
             println!(
                 "\n═══ RAW DEEPSEEK SSE [req={}] ═════════════════════════════════",
@@ -168,7 +168,7 @@ async fn handle_line(line: &str, adapter: &OpenAIAdapter) -> anyhow::Result<bool
             })
             .await;
 
-            // 转换后流
+            // Stream sau chuyển đổi
             let rid2 = demo_req_id();
             println!(
                 "\n═══ CONVERTED OPENAI SSE [req={}] ═════════════════════════════",
@@ -183,7 +183,7 @@ async fn handle_line(line: &str, adapter: &OpenAIAdapter) -> anyhow::Result<bool
                     while let Some(chunk) = s.next().await {
                         match chunk {
                             Ok(c) => println!("  {}", serde_json::to_string(&c).unwrap()),
-                            Err(e) => eprintln!("流错误: {}", e),
+                            Err(e) => eprintln!("Loi stream: {}", e),
                         }
                     }
                 }
@@ -198,7 +198,7 @@ async fn handle_line(line: &str, adapter: &OpenAIAdapter) -> anyhow::Result<bool
             let count: usize = match positional[1].parse() {
                 Ok(n) if n > 0 => n,
                 _ => {
-                    eprintln!("[错误] 并发数必须是正整数");
+                    eprintln!("[Loi] So request dong thoi phai la so nguyen duong");
                     return Ok(false);
                 }
             };
@@ -224,10 +224,10 @@ async fn handle_line(line: &str, adapter: &OpenAIAdapter) -> anyhow::Result<bool
         "source" if parts.len() == 2 => {
             let file = parts[1];
             if !Path::new(file).exists() {
-                eprintln!("[错误] 文件不存在: {}", file);
+                eprintln!("[Loi] File khong ton tai: {}", file);
                 return Ok(false);
             }
-            println!("[执行脚本: {}]", file);
+            println!("[Chay script: {}]", file);
             let content = std::fs::read_to_string(file)?;
             for script_line in content.lines() {
                 let script_line = script_line.trim();
@@ -239,17 +239,17 @@ async fn handle_line(line: &str, adapter: &OpenAIAdapter) -> anyhow::Result<bool
                     return Ok(true);
                 }
             }
-            println!("[脚本执行完毕]");
+            println!("[Script chay xong]");
         }
 
         "quit" | "exit" => {
-            println!("[退出]");
+            println!("[Thoat]");
             return Ok(true);
         }
 
         _ => {
             println!(
-                "[未知命令: {}] 可用: chat | raw | compare | concurrent | models | model | status | source | quit",
+                "[Lenh khong ro: {}] Co the dung: chat | raw | compare | concurrent | models | model | status | source | quit",
                 cmd
             );
         }
@@ -261,12 +261,12 @@ async fn handle_line(line: &str, adapter: &OpenAIAdapter) -> anyhow::Result<bool
 fn load_json(file: &str) -> anyhow::Result<Vec<u8>> {
     let path = Path::new(file);
     if !path.exists() {
-        anyhow::bail!("文件不存在: {}", file);
+        anyhow::bail!("File khong ton tai: {}", file);
     }
     Ok(std::fs::read(path)?)
 }
 
-/// 消费流并给每个 chunk 应用处理函数
+/// Tiêu thụ stream và áp dụng hàm xử lý cho từng chunk
 async fn consume_stream<F>(stream: StreamResponse, mut f: F)
 where
     F: FnMut(Bytes),
@@ -276,14 +276,14 @@ where
         match res {
             Ok(bytes) => f(bytes),
             Err(e) => {
-                eprintln!("\n[流错误] {}", e);
+                eprintln!("\n[Loi stream] {}", e);
                 break;
             }
         }
     }
 }
 
-/// 打印流式响应
+/// In response dạng stream
 async fn print_stream(stream: &mut StreamResponse, raw: bool) {
     let mut stdout = io::stdout();
     while let Some(res) = stream.next().await {
@@ -297,7 +297,7 @@ async fn print_stream(stream: &mut StreamResponse, raw: bool) {
                 }
             }
             Err(e) => {
-                eprintln!("\n[流错误] {}", e);
+                eprintln!("\n[Loi stream] {}", e);
                 break;
             }
         }
@@ -307,7 +307,7 @@ async fn print_stream(stream: &mut StreamResponse, raw: bool) {
     }
 }
 
-/// 打印单个转换后 chunk 的摘要
+/// In tóm tắt một chunk đã chuyển đổi
 fn print_stream_chunk(bytes: &Bytes) {
     let text = String::from_utf8_lossy(bytes);
     let json_str = text
@@ -366,7 +366,7 @@ fn print_stream_chunk(bytes: &Bytes) {
     }
 }
 
-/// 执行并发请求
+/// Chạy request đồng thời
 async fn run_concurrent(adapter: &OpenAIAdapter, count: usize, body: Vec<u8>, raw: bool) {
     let start = std::time::Instant::now();
 
@@ -380,7 +380,7 @@ async fn run_concurrent(adapter: &OpenAIAdapter, count: usize, body: Vec<u8>, ra
                 let req = match serde_json::from_slice::<ChatCompletionsRequest>(&body) {
                     Ok(r) => r,
                     Err(e) => {
-                        eprintln!("[请求{} 解析失败] {}", i, e);
+                        eprintln!("[Request{} parse that bai] {}", i, e);
                         return (i, false, String::new(), req_start.elapsed());
                     }
                 };
@@ -388,7 +388,7 @@ async fn run_concurrent(adapter: &OpenAIAdapter, count: usize, body: Vec<u8>, ra
                 let result = match adapter.chat_completions(req, &rid).await {
                     Ok(r) => r,
                     Err(e) => {
-                        eprintln!("[请求{} 失败] {}", i, e);
+                        eprintln!("[Request{} that bai] {}", i, e);
                         return (i, false, String::new(), req_start.elapsed());
                     }
                 };
@@ -417,7 +417,7 @@ async fn run_concurrent(adapter: &OpenAIAdapter, count: usize, body: Vec<u8>, ra
                                     }
                                 }
                                 Err(e) => {
-                                    eprintln!("\n[请求{} 流错误] {}", i, e);
+                                    eprintln!("\n[Request{} loi stream] {}", i, e);
                                     ok = false;
                                     break;
                                 }
@@ -457,25 +457,25 @@ async fn run_concurrent(adapter: &OpenAIAdapter, count: usize, body: Vec<u8>, ra
     let results = join_all(futures).await;
     let total_elapsed = start.elapsed();
 
-    println!("\n[并发结果]");
+    println!("\n[Ket qua dong thoi]");
     let success_count = results.iter().filter(|(_, ok, _, _)| *ok).count();
     for (i, ok, output, elapsed) in results {
         let preview: String = output.chars().take(80).collect();
-        let status = if ok { "成功" } else { "失败" };
+        let status = if ok { "thanh cong" } else { "that bai" };
         println!(
-            "  [请求{:2}] {} | {:>12?} | {}",
+            "  [Request{:2}] {} | {:>12?} | {}",
             i,
             status,
             elapsed,
             if preview.is_empty() {
-                "(无输出)".to_string()
+                "(khong co output)".to_string()
             } else {
                 format!("{}...", output.replace('\n', " "))
             }
         );
     }
     println!(
-        "  总计: {}/{} 成功 | 总耗时 {:?}",
+        "  Tong: {}/{} thanh cong | Tong thoi gian {:?}",
         success_count, count, total_elapsed
     );
 }

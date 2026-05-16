@@ -6,9 +6,16 @@ export function LanguageSwitcher() {
   const { i18n, t } = useTranslation();
 
   const toggleLanguage = () => {
-    const nextLang = i18n.language === 'zh' ? 'en' : 'zh';
+    const currentLang = i18n.resolvedLanguage ?? i18n.language;
+    const order = ['vi', 'zh', 'en'];
+    const currentIndex = order.indexOf(currentLang);
+    const nextLang = order[(currentIndex + 1) % order.length] ?? 'vi';
     i18n.changeLanguage(nextLang);
   };
+
+  const currentLang = i18n.resolvedLanguage ?? i18n.language;
+  const nextLabelKey =
+    currentLang === 'vi' ? 'language.zh' : currentLang === 'zh' ? 'language.en' : 'language.vi';
 
   return (
     <Button
@@ -18,7 +25,7 @@ export function LanguageSwitcher() {
       className="w-full justify-start gap-3 text-muted-foreground"
     >
       <Languages className="h-4 w-4" />
-      {i18n.language === 'zh' ? t('language.en') : t('language.zh')}
+      {t(nextLabelKey)}
     </Button>
   );
 }

@@ -1,12 +1,12 @@
 {
-  "name": "基础对话",
+  "name": "Hoi thoai co ban",
   "endpoint": "anthropic",
   "category": "basic",
   "models": ["deepseek-default", "deepseek-expert"],
   "request": {
-    "system": "你是 ds-free-api 助手，简洁回答问题。",
+    "system": "Ban la tro ly ds-free-api, tra loi ngan gon.",
     "messages": [
-      {"role": "user", "content": "你好"}
+      {"role": "user", "content": "Xin chao"}
     ],
     "max_tokens": 4096,
     "stream": false

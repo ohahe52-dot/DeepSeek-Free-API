@@ -1,25 +1,25 @@
-//! 模型解析 —— 将 OpenAI model 字段映射为 ds_core 能力标志
+//! Parse model - map field OpenAI model sang cờ năng lực ds_core
 //!
-//! 通过外部注入的 registry 实现模型别名到 model_type 的动态映射。
+//! Dùng registry inject từ ngoài để map động alias model sang model_type.
 
 use std::collections::HashMap;
 
 use crate::openai_adapter::types::WebSearchOptions;
 
-/// 模型解析结果
+/// Kết quả parse model
 pub(crate) struct ModelResolution {
-    /// ds_core 使用的 model_type
+    /// model_type mà ds_core dùng
     pub model_type: String,
     pub thinking_enabled: bool,
     pub search_enabled: bool,
 }
 
-/// 根据 model_id 和扩展参数解析模型配置
+/// Parse cấu hình model theo model_id và tham số mở rộng
 ///
-/// thinking_enabled 在 reasoning_effort 非 "none" 时启用。
-/// 若 reasoning_effort 未提供，默认按 "high" 处理（即 reasoning 默认开启）。
-/// search_enabled 默认开启（DeepSeek 后端在搜索模式下注入更强的系统提示词）。
-/// 显式设置 web_search_options 可覆盖行为。
+/// thinking_enabled bật khi reasoning_effort khác "none".
+/// Nếu reasoning_effort không được truyền, mặc định xử lý như "high" (reasoning bật mặc định).
+/// search_enabled bật mặc định (backend DeepSeek inject system prompt mạnh hơn khi ở chế độ search).
+/// Có thể override bằng web_search_options tường minh.
 pub(crate) fn resolve(
     registry: &HashMap<String, String>,
     model_id: &str,
@@ -30,7 +30,7 @@ pub(crate) fn resolve(
     let model_type = registry
         .get(&key)
         .cloned()
-        .ok_or_else(|| format!("不支持的模型: {}", model_id))?;
+        .ok_or_else(|| format!("Mô hình không được hỗ trợ: {}", model_id))?;
 
     let reasoning_effort = reasoning_effort.unwrap_or("high");
     let thinking_enabled = reasoning_effort != "none";

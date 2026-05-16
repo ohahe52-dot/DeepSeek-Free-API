@@ -1,4 +1,4 @@
-//! ai-free-api 主入口 —— 启动 HTTP 服务器
+//! Điểm vào ai-free-api - khởi động HTTP server
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

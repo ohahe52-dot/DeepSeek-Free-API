@@ -1,135 +1,135 @@
-//! 配置加载模块 —— 统一配置入口
+//! Module tải cấu hình - điểm vào cấu hình thống nhất
 //!
-//! 支持 `-c <path>` 命令行参数，默认值见下方函数。
-//! config.toml 中注释项使用代码默认值。
+//! Hỗ trợ tham số dòng lệnh `-c <path>`; giá trị mặc định xem trong các hàm bên dưới.
+//! Mục bị comment trong config.toml dùng giá trị mặc định trong code.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// 应用配置根结构
+/// Cấu trúc gốc cấu hình ứng dụng
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
-    /// 账号池（必需，可为空——启动后通过管理面板添加）
+    /// Pool tài khoản (bắt buộc, có thể rỗng - thêm qua bảng quản trị sau khi khởi động)
     #[serde(default)]
     pub accounts: Vec<Account>,
-    /// DeepSeek 相关配置
+    /// Cấu hình DeepSeek
     #[serde(default)]
     pub deepseek: DeepSeekConfig,
-    /// HTTP 服务器配置（必填）
+    /// Cấu hình HTTP server (bắt buộc)
     pub server: ServerConfig,
-    /// 代理配置（可选，用于绕过 WAF）
+    /// Cấu hình proxy (tùy chọn, dùng để vượt WAF)
     #[serde(default)]
     pub proxy: ProxyConfig,
-    /// Admin 配置（bcrypt 密码哈希、JWT 密钥等，由管理面板管理）
+    /// Cấu hình admin (hash mật khẩu bcrypt, khóa JWT..., do bảng quản trị quản lý)
     #[serde(default)]
     pub admin: AdminConfig,
-    /// API Key 列表（由管理面板管理）
+    /// Danh sách API Key (do bảng quản trị quản lý)
     #[serde(default)]
     pub api_keys: Vec<ApiKeyEntry>,
 }
 
-/// Admin 配置
+/// Cấu hình admin
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct AdminConfig {
-    /// bcrypt 哈希后的密码
+    /// Mật khẩu đã hash bằng bcrypt
     #[serde(default)]
     pub password_hash: String,
-    /// JWT 签名密钥（hex 编码的 32 字节随机值）
+    /// Khóa ký JWT (giá trị ngẫu nhiên 32 byte mã hóa hex)
     #[serde(default)]
     pub jwt_secret: String,
-    /// 最近一次 JWT 签发时间（用于吊销旧 token）
+    /// Thời điểm phát hành JWT gần nhất (dùng để thu hồi token cũ)
     #[serde(default)]
     pub jwt_issued_at: u64,
-    /// 修改密码：旧密码明文（仅 PUT 接收，不落地 config.toml）
+    /// Đổi mật khẩu: mật khẩu cũ dạng rõ (chỉ nhận qua PUT, không ghi xuống config.toml)
     #[serde(default, skip_serializing)]
     pub old_password: String,
-    /// 修改密码：新密码明文（仅 PUT 接收，不落地 config.toml）
+    /// Đổi mật khẩu: mật khẩu mới dạng rõ (chỉ nhận qua PUT, không ghi xuống config.toml)
     #[serde(default, skip_serializing)]
     pub new_password: String,
 }
 
-/// API Key 条目
+/// Mục API Key
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ApiKeyEntry {
     pub key: String,
     pub description: String,
 }
 
-/// 代理配置
+/// Cấu hình proxy
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct ProxyConfig {
-    /// 代理 URL，如 http://127.0.0.1:7890 或 socks5://127.0.0.1:7891
+    /// Proxy URL, ví dụ http://127.0.0.1:7890 hoặc socks5://127.0.0.1:7891
     pub url: Option<String>,
 }
 
-/// 单个账号配置
+/// Cấu hình một tài khoản
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Account {
-    /// 邮箱（与 mobile 二选一）
+    /// Email (chọn một trong email hoặc mobile)
     pub email: String,
-    /// 手机号（与 email 二选一）
+    /// Số điện thoại (chọn một trong email hoặc mobile)
     pub mobile: String,
-    /// 区号（与 mobile 配合使用，如 "+86"）
+    /// Mã vùng (dùng kèm mobile, ví dụ "+86")
     pub area_code: String,
-    /// 密码
+    /// Mật khẩu
     pub password: String,
 }
 
-/// DeepSeek 客户端配置
+/// Cấu hình client DeepSeek
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DeepSeekConfig {
-    /// API 基础地址
+    /// Base URL API
     #[serde(default = "default_api_base")]
     pub api_base: String,
-    /// WASM 文件完整 URL（PoW 计算所需，版本号可能变动）
+    /// URL đầy đủ của file WASM (cần cho tính PoW, version có thể đổi)
     #[serde(default = "default_wasm_url")]
     pub wasm_url: String,
-    /// User-Agent 请求头
+    /// Header User-Agent
     #[serde(default = "default_user_agent")]
     pub user_agent: String,
-    /// X-Client-Version 请求头（用于 expert 模型等功能）
+    /// Header X-Client-Version (dùng cho model expert và tính năng liên quan)
     #[serde(default = "default_client_version")]
     pub client_version: String,
-    /// X-Client-Platform 请求头
+    /// Header X-Client-Platform
     #[serde(default = "default_client_platform")]
     pub client_platform: String,
-    /// X-Client-Locale 请求头
+    /// Header X-Client-Locale
     #[serde(default = "default_client_locale")]
     pub client_locale: String,
-    /// 定义支持的模型类型列表，每种类型会自动映射为 OpenAI 的 model_id：deepseek-<type>
+    /// Danh sách loại model hỗ trợ; mỗi loại tự map thành model_id OpenAI: deepseek-<type>
     #[serde(default = "default_model_types")]
     pub model_types: Vec<String>,
-    /// 各模型类型的输入 token 限制（与 model_types 按索引一一对应）
+    /// Giới hạn token input của từng loại model (khớp index với model_types)
     #[serde(default = "default_max_input_tokens")]
     pub max_input_tokens: Vec<u32>,
-    /// 各模型类型的输出 token 限制（与 model_types 按索引一一对应）
+    /// Giới hạn token output của từng loại model (khớp index với model_types)
     #[serde(default = "default_max_output_tokens")]
     pub max_output_tokens: Vec<u32>,
-    /// 各模型类型的单次输入字符数限制（与 model_types 按索引一一对应）
-    /// 超过此限制时，expert 模型会触发分块循环写入 session，其他模型会自动退回内联发送
+    /// Giới hạn số ký tự input mỗi lần của từng loại model (khớp index với model_types)
+    /// Vượt giới hạn này: model expert dùng ghi session theo chunk, model khác tự fallback sang gửi inline
     #[serde(default = "default_input_character_limits")]
     pub input_character_limits: Vec<u32>,
-    /// 工具调用标签配置（自定义回退标签）
+    /// Cấu hình tag gọi công cụ (tag fallback tùy chỉnh)
     #[serde(default)]
     pub tool_call: ToolCallTagConfig,
-    /// 模型别名：按 index 对齐 model_types，默认无别名
-    /// 如 model_types = ["default", "expert"], model_aliases = ["", "deepseek-v4-pro"]
-    /// 则仅 deepseek-v4-pro → expert（index 1），空字符串被跳过
+    /// Alias model: khớp index với model_types, mặc định không có alias
+    /// Ví dụ model_types = ["default", "expert"], model_aliases = ["", "deepseek-v4-pro"]
+    /// thì chỉ deepseek-v4-pro -> expert (index 1), chuỗi rỗng bị bỏ qua
     #[serde(default)]
     pub model_aliases: Vec<String>,
 }
 
-/// 工具调用标签配置
+/// Cấu hình tag gọi công cụ
 ///
-/// 内置模糊匹配：`｜`(U+FF5C)↔`|`、`▁`(U+2581)↔`_`，自动覆盖大多数字符级幻觉变体。
-/// 此处配置的 extra 列表用于处理格式完全不同的标签（如 `<tool_call>`），
-/// 模糊匹配无法覆盖的情况。
+/// Fuzzy match tích hợp: `｜`(U+FF5C)<->`|`, `▁`(U+2581)<->`_`, tự xử lý đa số biến thể sai ở cấp ký tự.
+/// Danh sách extra ở đây dùng cho tag có format khác hẳn (ví dụ `<tool_call>`),
+/// tức các trường hợp fuzzy match không bao phủ được.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ToolCallTagConfig {
-    /// 额外开始标签（内置 `<|tool▁calls▁begin|>` + 模糊匹配，此处只加格式完全不同的变体）
+    /// Tag bắt đầu bổ sung (đã có `<|tool▁calls▁begin|>` + fuzzy match; chỉ thêm biến thể format khác hẳn)
     #[serde(default = "default_tool_call_starts")]
     pub extra_starts: Vec<String>,
-    /// 额外结束标签（内置 `<|tool▁calls▁end|>` + 模糊匹配，此处只加格式完全不同的变体）
+    /// Tag kết thúc bổ sung (đã có `<|tool▁calls▁end|>` + fuzzy match; chỉ thêm biến thể format khác hẳn)
     #[serde(default = "default_tool_call_ends")]
     pub extra_ends: Vec<String>,
 }
@@ -199,7 +199,7 @@ fn default_input_character_limits() -> Vec<u32> {
 }
 
 impl DeepSeekConfig {
-    /// 生成 OpenAI 模型注册表映射
+    /// Tạo map registry model OpenAI
     #[must_use]
     pub fn model_registry(&self) -> std::collections::HashMap<String, String> {
         let mut map = std::collections::HashMap::new();
@@ -216,15 +216,15 @@ impl DeepSeekConfig {
     }
 }
 
-/// HTTP 服务器配置（必填）
+/// Cấu hình HTTP server (bắt buộc)
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ServerConfig {
-    /// 监听地址
+    /// Địa chỉ lắng nghe
     pub host: String,
-    /// 监听端口
+    /// Cổng lắng nghe
     pub port: u16,
-    /// CORS 允许的 Origin 列表，默认 ["http://localhost:22217"]
-    /// 设为 ["*"] 则允许所有（不推荐生产使用）
+    /// Danh sách Origin được CORS cho phép, mặc định ["http://localhost:22217"]
+    /// Đặt ["*"] để cho phép tất cả (không khuyến nghị cho production)
     #[serde(default = "default_cors_origins")]
     pub cors_origins: Vec<String>,
 }
@@ -233,47 +233,84 @@ fn default_cors_origins() -> Vec<String> {
     vec!["http://localhost:22217".to_string()]
 }
 
-/// 默认 API 基础地址
+/// Base URL API mặc định
 fn default_api_base() -> String {
     "https://chat.deepseek.com/api/v0".to_string()
 }
 
-/// 默认 WASM 文件 URL（版本号可能变动，建议配置文件中显式指定）
+/// URL file WASM mặc định (version có thể đổi, nên khai báo rõ trong file cấu hình)
 fn default_wasm_url() -> String {
     "https://fe-static.deepseek.com/chat/static/sha3_wasm_bg.7b9ca65ddd.wasm".to_string()
 }
 
-/// 默认 User-Agent
+/// User-Agent mặc định
 fn default_user_agent() -> String {
     "DeepSeek/2.0.4 Android/35".to_string()
 }
 
-/// 默认 X-Client-Version
+/// X-Client-Version mặc định
 fn default_client_version() -> String {
     "2.1.0".to_string()
 }
 
-/// 默认 X-Client-Platform
+/// X-Client-Platform mặc định
 fn default_client_platform() -> String {
     "android".to_string()
 }
 
-/// 默认 X-Client-Locale
+/// X-Client-Locale mặc định
 fn default_client_locale() -> String {
     "zh_CN".to_string()
 }
 
 impl Config {
-    /// 从指定路径加载配置
+    /// Tải cấu hình từ path chỉ định
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
         let content = std::fs::read_to_string(path)?;
         let mut config: Self = toml::de::from_str(&content)?;
         config.dedup_accounts();
+        config.apply_env_overrides()?;
         config.validate()?;
         Ok(config)
     }
 
-    /// 按 email（优先）或 mobile 去重，保留首次出现的账号
+    fn apply_env_overrides(&mut self) -> Result<(), ConfigError> {
+        let platform_port = std::env::var("PORT").ok();
+        let port = std::env::var("DS_PORT")
+            .ok()
+            .or_else(|| platform_port.clone());
+
+        if let Some(port) = port {
+            self.server.port = port.parse::<u16>().map_err(|_| {
+                ConfigError::Validation(format!("PORT/DS_PORT không hợp lệ: {port}"))
+            })?;
+        }
+
+        if let Ok(host) = std::env::var("DS_HOST") {
+            let host = host.trim();
+            if !host.is_empty() {
+                self.server.host = host.to_string();
+            }
+        } else if platform_port.is_some() {
+            self.server.host = "0.0.0.0".to_string();
+        }
+
+        if let Ok(origins) = std::env::var("DS_CORS_ORIGINS") {
+            let origins = origins
+                .split(',')
+                .map(str::trim)
+                .filter(|origin| !origin.is_empty())
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>();
+            if !origins.is_empty() {
+                self.server.cors_origins = origins;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Khử trùng lặp theo email (ưu tiên) hoặc mobile, giữ tài khoản xuất hiện đầu tiên
     fn dedup_accounts(&mut self) {
         let mut seen = std::collections::HashSet::new();
         self.accounts.retain(|a| {
@@ -286,18 +323,18 @@ impl Config {
         });
     }
 
-    /// 解析命令行参数并加载配置
+    /// Parse tham số dòng lệnh và tải cấu hình
     ///
-    /// 支持 `-c <path>` 指定配置文件路径，默认使用 `config.toml`
-    /// 也支持 `DS_CONFIG_PATH` 环境变量（优先级：`-c` > `DS_CONFIG_PATH` > 默认值）
-    /// 若文件不存在且非 `-c` 显式指定，自动创建最小配置
-    /// 返回 (加载的配置, 配置文件的路径)
+    /// Hỗ trợ `-c <path>` để chỉ định path file cấu hình, mặc định dùng `config.toml`
+    /// Cũng hỗ trợ biến môi trường `DS_CONFIG_PATH` (ưu tiên: `-c` > `DS_CONFIG_PATH` > mặc định)
+    /// Nếu file không tồn tại và không được chỉ định rõ bằng `-c`, tự tạo cấu hình tối thiểu
+    /// Trả về (cấu hình đã tải, path file cấu hình)
     pub fn load_with_args(
         args: impl Iterator<Item = String>,
     ) -> Result<(Self, PathBuf), ConfigError> {
         let mut explicit_c = false;
         let mut config_path = None;
-        let mut iter = args.skip(1); // 跳过程序名
+        let mut iter = args.skip(1); // Bỏ qua tên chương trình
 
         while let Some(arg) = iter.next() {
             if arg == "-c" {
@@ -305,7 +342,9 @@ impl Config {
                 if let Some(path) = iter.next() {
                     config_path = Some(path);
                 } else {
-                    return Err(ConfigError::Cli("-c 参数需要指定路径".to_string()));
+                    return Err(ConfigError::Cli(
+                        "Tham số -c cần đường dẫn cấu hình".to_string(),
+                    ));
                 }
             }
         }
@@ -319,10 +358,13 @@ impl Config {
             if explicit_c {
                 return Err(ConfigError::Io(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
-                    format!("指定配置文件不存在: {}", path.display()),
+                    format!(
+                        "Tệp cấu hình được chỉ định không tồn tại: {}",
+                        path.display()
+                    ),
                 )));
             }
-            // 自动创建最小配置
+            // Tự tạo cấu hình tối thiểu
             let default = Config {
                 accounts: Vec::new(),
                 deepseek: DeepSeekConfig::default(),
@@ -342,36 +384,41 @@ impl Config {
                 }
             }
             default.save(&path)?;
-            log::info!(target: "config", "已创建默认配置文件: {}", path.display());
+            log::info!(target: "config", "Đã tạo tệp cấu hình mặc định: {}", path.display());
+            let mut default = default;
+            default.apply_env_overrides()?;
+            default.validate()?;
             return Ok((default, path));
         }
 
         let config = Self::load(&path)?;
         Ok((config, path))
     }
-    /// 验证配置有效性
+    /// Kiểm tra tính hợp lệ của cấu hình
     pub(crate) fn validate(&self) -> Result<(), ConfigError> {
         if self.deepseek.model_types.is_empty() {
-            return Err(ConfigError::Validation("model_types 不能为空".to_string()));
+            return Err(ConfigError::Validation(
+                "model_types không được để trống".to_string(),
+            ));
         }
         let n = self.deepseek.model_types.len();
         if self.deepseek.max_input_tokens.len() != n {
             return Err(ConfigError::Validation(format!(
-                "max_input_tokens 长度({})必须与 model_types 长度({})一致",
+                "Độ dài max_input_tokens ({}) phải khớp độ dài model_types ({})",
                 self.deepseek.max_input_tokens.len(),
                 n
             )));
         }
         if self.deepseek.max_output_tokens.len() != n {
             return Err(ConfigError::Validation(format!(
-                "max_output_tokens 长度({})必须与 model_types 长度({})一致",
+                "Độ dài max_output_tokens ({}) phải khớp độ dài model_types ({})",
                 self.deepseek.max_output_tokens.len(),
                 n
             )));
         }
         if self.deepseek.input_character_limits.len() != n {
             return Err(ConfigError::Validation(format!(
-                "input_character_limits 长度({})必须与 model_types 长度({})一致",
+                "Độ dài input_character_limits ({}) phải khớp độ dài model_types ({})",
                 self.deepseek.input_character_limits.len(),
                 n
             )));
@@ -385,7 +432,7 @@ impl Config {
                     &k.key
                 };
                 return Err(ConfigError::Validation(format!(
-                    "API key 重复: {}...",
+                    "API key bị trùng: {}...",
                     prefix
                 )));
             }
@@ -408,17 +455,17 @@ impl Config {
     }
 }
 
-/// 配置加载错误类型
+/// Kiểu lỗi tải cấu hình
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
-    #[error("IO 错误: {0}")]
+    #[error("Lỗi IO: {0}")]
     Io(#[from] std::io::Error),
-    #[error("TOML 解析错误: {0}")]
+    #[error("Lỗi phân tích TOML: {0}")]
     Toml(#[from] toml::de::Error),
-    #[error("配置验证错误: {0}")]
+    #[error("Lỗi xác thực cấu hình: {0}")]
     Validation(String),
-    #[error("命令行参数错误: {0}")]
+    #[error("Lỗi tham số dòng lệnh: {0}")]
     Cli(String),
-    #[error("TOML 序列化错误: {0}")]
+    #[error("Lỗi serialize TOML: {0}")]
     TomlSerialization(#[from] toml::ser::Error),
 }

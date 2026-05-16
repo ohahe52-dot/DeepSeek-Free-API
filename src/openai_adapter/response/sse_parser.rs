@@ -1,4 +1,4 @@
-//! SSE 解析 —— 将 ds_core 字节流切分为独立 SSE 事件
+//! Parse SSE - cắt stream byte ds_core thành event SSE độc lập
 
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -11,7 +11,7 @@ use log::{trace, warn};
 
 use crate::openai_adapter::OpenAIAdapterError;
 
-/// 单个 SSE 事件
+/// Một event SSE
 #[derive(Debug, Clone)]
 pub struct SseEvent {
     pub event: Option<String>,
@@ -19,7 +19,7 @@ pub struct SseEvent {
 }
 
 pin_project! {
-    // 包装底层字节流，将其切分为独立的 SSE 事件
+    // Bọc stream byte tầng dưới, cắt thành event SSE độc lập
     pub struct SseStream<S> {
         #[pin]
         inner: S,
@@ -29,7 +29,7 @@ pin_project! {
 }
 
 impl<S> SseStream<S> {
-    /// 创建 SSE 流包装器
+    /// Tạo wrapper stream SSE
     pub fn new(inner: S) -> Self {
         Self {
             inner,
@@ -60,9 +60,9 @@ where
                     }
                 }
                 Poll::Ready(Some(Err(e))) => {
-                    warn!(target: "adapter", "SSE 流错误: {}", e);
+                    warn!(target: "adapter", "Lỗi stream SSE: {}", e);
                     return Poll::Ready(Some(Err(OpenAIAdapterError::Internal(format!(
-                        "SSE 流错误: {}",
+                        "Lỗi stream SSE: {}",
                         e
                     )))));
                 }
@@ -88,7 +88,7 @@ where
     }
 }
 
-/// 把 raw_buf 中完整的 UTF-8 前缀移动到 text_buf，残留不完整的字节留在 raw_buf
+/// Chuyển tiền tố UTF-8 hoàn chỉnh từ raw_buf sang text_buf, giữ byte chưa hoàn chỉnh trong raw_buf
 fn decode_utf8_prefix(raw: &mut Vec<u8>, text: &mut String) {
     if raw.is_empty() {
         return;
@@ -101,7 +101,7 @@ fn decode_utf8_prefix(raw: &mut Vec<u8>, text: &mut String) {
         Err(e) => {
             let up_to = e.valid_up_to();
             if up_to > 0 {
-                // valid_up_to() 保证该前缀是合法 UTF-8
+                // valid_up_to() đảm bảo tiền tố này là UTF-8 hợp lệ
                 text.push_str(
                     std::str::from_utf8(&raw[..up_to])
                         .expect("prefix after valid_up_to() must be valid UTF-8"),
@@ -112,7 +112,7 @@ fn decode_utf8_prefix(raw: &mut Vec<u8>, text: &mut String) {
     }
 }
 
-/// 从 buf 中提取第一个以 \n\n 分隔的 SSE 事件块
+/// Trích block event SSE đầu tiên được phân tách bằng \n\n từ buf
 fn try_pop_event(buf: &mut String) -> Option<SseEvent> {
     let pos = buf.find("\n\n")?;
     let tail = buf.split_off(pos);

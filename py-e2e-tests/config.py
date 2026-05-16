@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""e2e 测试共用配置模块 —— 加载 py-e2e-tests/config.toml"""
+"""Module cau hinh chung e2e - tai py-e2e-tests/config.toml"""
 
 import sys
 from pathlib import Path
@@ -10,10 +10,10 @@ import tomllib
 def load_config() -> dict:
     config_path = Path(__file__).parent / "config.toml"
     if not config_path.exists():
-        print(f"[错误] 未找到 {config_path}")
-        print(f"  请从项目根目录复制并编辑:")
+        print(f"[Loi] Khong tim thay {config_path}")
+        print(f"  Hay copy va sua tu thu muc goc project:")
         print(f"    cp config.example.toml {config_path}")
-        print(f"  然后将 [[accounts]] 改为 accounts = []（e2e 测试无需真实账号）")
+        print(f"  Sau do doi [[accounts]] thanh accounts = [] (e2e test khong can tai khoan that)")
         sys.exit(1)
 
     with open(config_path, "rb") as f:

@@ -1,8 +1,8 @@
-//! OpenAI 响应转换 —— 将 DeepSeek SSE 流映射为 OpenAI 响应格式
+//! Chuyển response OpenAI - map stream SSE DeepSeek thành format response OpenAI
 //!
-//! 数据流：sse_parser -> state -> converter -> tool_parser
-//! - 仅 THINK / RESPONSE 片段映射到用户可见文本
-//! - obfuscation 在最终 SSE 序列化阶段动态注入
+//! Luồng dữ liệu: sse_parser -> state -> converter -> tool_parser
+//! - Chỉ fragment THINK / RESPONSE được map thành text người dùng thấy
+//! - obfuscation được inject động ở bước serialize SSE cuối
 
 mod converter;
 mod sse_parser;
@@ -77,11 +77,11 @@ fn find_stop_pos(content: &str, stop: &[String]) -> Option<usize> {
     stop.iter().filter_map(|s| content.find(s)).min()
 }
 
-/// RepairStream 内部使用的流类型
+/// Kiểu stream dùng nội bộ trong RepairStream
 type ChunkStream =
     Pin<Box<dyn Stream<Item = Result<ChatCompletionsResponseChunk, OpenAIAdapterError>> + Send>>;
 
-/// 工具调用修复闭包类型
+/// Kiểu closure sửa lỗi gọi công cụ
 pub(crate) type RepairFn = Arc<
     dyn Fn(
             String,
@@ -91,7 +91,7 @@ pub(crate) type RepairFn = Arc<
         + Sync,
 >;
 
-/// 执行 tool_calls 修复：将 ds_core 字节流解析后提取文本，转换为结构化 ToolCall
+/// Thực hiện sửa tool_calls: parse stream byte ds_core để trích text, rồi chuyển thành ToolCall có cấu trúc
 pub(crate) async fn execute_tool_repair(
     ds_stream: Pin<Box<dyn Stream<Item = Result<Bytes, crate::ds_core::CoreError>> + Send>>,
     tag_config: &TagConfig,
@@ -106,7 +106,7 @@ pub(crate) async fn execute_tool_repair(
             text.push_str(&t);
             if text.len() > tool_parser::MAX_XML_BUF_LEN {
                 return Err(OpenAIAdapterError::Internal(
-                    "修复模型输出过长，放弃修复".into(),
+                    "Model sửa trả output quá dài, bỏ sửa".into(),
                 ));
             }
         }
@@ -125,15 +125,17 @@ pub(crate) async fn execute_tool_repair(
 
     let (calls, _) = tool_parser::parse_tool_calls_with(&wrapped, tag_config).ok_or_else(|| {
         OpenAIAdapterError::Internal(format!(
-            "修复模型返回无法解析为工具调用: {}",
+            "Model sửa trả kết quả không parse được thành tool call: {}",
             &text[..text.len().min(200)]
         ))
     })?;
 
-    // 修复模型可能返回空结果，提前检查
+    // Model sửa có thể trả kết quả rỗng, kiểm tra sớm
     let trimmed = text.trim();
     if trimmed == "[]" || trimmed == "{}" {
-        return Err(OpenAIAdapterError::Internal("修复模型返回空结果".into()));
+        return Err(OpenAIAdapterError::Internal(
+            "Model sửa trả kết quả rỗng".into(),
+        ));
     }
     Ok(calls)
 }
@@ -148,11 +150,11 @@ enum RepairState {
 }
 
 pin_project! {
-    /// 工具调用修复流：在 ToolCallStream 之后、StopDetectStream 之前
+    /// Stream sửa lỗi gọi công cụ: sau ToolCallStream, trước StopDetectStream
     ///
-    /// 当 ToolCallStream 返回 Err(ToolCallRepairNeeded) 时，
-    /// 丢弃上游流（释放账号），通过 repair_fn 发起修复请求，
-    /// 将修复后的 tool_calls 发送给客户端。
+    /// Khi ToolCallStream trả Err(ToolCallRepairNeeded),
+    /// bỏ stream upstream (nhả tài khoản), gửi request sửa qua repair_fn,
+    /// rồi gửi tool_calls đã sửa cho client.
     struct RepairStream {
         #[pin]
         inner: Option<ChunkStream>,
@@ -196,7 +198,7 @@ impl Stream for RepairStream {
                         ))))) => {
                             warn!(
                                 target: "adapter",
-                                "RepairStream 捕获修复请求: len={}",
+                                "RepairStream bắt được yêu cầu sửa: len={}",
                                 tool_text.len()
                             );
                             trace!(target: "adapter", ">>> repair: accepting tool_text len={}", tool_text.len());
@@ -226,7 +228,7 @@ impl Stream for RepairStream {
                     Poll::Ready(Ok(calls)) => {
                         info!(
                             target: "adapter",
-                            "tool_calls 修复成功: {} 个工具调用",
+                            "Sửa tool_calls thành công: {} tool call",
                             calls.len()
                         );
                         trace!(target: "adapter", ">>> repair: success {} calls", calls.len());
@@ -241,13 +243,13 @@ impl Stream for RepairStream {
                         ))));
                     }
                     Poll::Ready(Err(e)) => {
-                        warn!(target: "adapter", "tool_calls 修复失败: {}", e);
-                        *this.state = RepairState::RepairFailed(format!("修复失败: {}", e));
+                        warn!(target: "adapter", "Sửa tool_calls thất bại: {}", e);
+                        *this.state = RepairState::RepairFailed(format!("Sửa thất bại: {}", e));
                         continue;
                     }
                     Poll::Pending => {
                         if this.keepalive_deadline.as_mut().poll(cx).is_ready() {
-                            trace!(target: "adapter", ">>> keepalive(repair): 发送空工具增量");
+                            trace!(target: "adapter", ">>> keepalive(repair): gửi delta công cụ rỗng");
                             this.keepalive_deadline
                                 .as_mut()
                                 .reset(tokio::time::Instant::now() + KEEPALIVE_INTERVAL);
@@ -323,7 +325,7 @@ where
                         if chunk.choices.is_empty() && chunk.usage.is_some() {
                             return Poll::Ready(Some(Ok(chunk)));
                         }
-                        // 允许 finish_reason 从 stop 升级为 tool_calls
+                        // Cho phép nâng finish_reason từ stop thành tool_calls
                         if let Some(choice) = chunk.choices.first_mut()
                             && choice.delta.content.is_none()
                             && choice.delta.reasoning_content.is_none()
@@ -335,7 +337,8 @@ where
                         continue;
                     }
 
-                    if let Some(choice) = chunk.choices.first_mut()
+                    if !this.stop.is_empty()
+                        && let Some(choice) = chunk.choices.first_mut()
                         && let Some(ref content) = choice.delta.content
                     {
                         this.buffer.push_str(content);
@@ -376,7 +379,7 @@ where
     }
 }
 
-/// 流式响应参数（减少 stream() 参数个数）
+/// Tham số response stream (giảm số tham số của stream())
 pub(crate) struct StreamCfg {
     pub include_usage: bool,
     pub include_obfuscation: bool,
@@ -386,14 +389,14 @@ pub(crate) struct StreamCfg {
     pub tag_config: Arc<TagConfig>,
 }
 
-/// 流式响应：把 ds_core 字节流转换为 ChatCompletionsResponseChunk 流
+/// Response stream: chuyển stream byte ds_core thành stream ChatCompletionsResponseChunk
 pub(crate) fn stream<S>(ds_stream: S, model: String, cfg: StreamCfg) -> ChunkStream
 where
     S: Stream<Item = Result<Bytes, crate::ds_core::CoreError>> + Send + 'static,
 {
     debug!(
         target: "adapter",
-        "构建流式响应: model={}, include_usage={}, include_obfuscation={}, stop_count={}, repair={}",
+        "Dựng phản hồi streaming: model={}, include_usage={}, include_obfuscation={}, stop_count={}, repair={}",
         model, cfg.include_usage, cfg.include_obfuscation, cfg.stop.len(), cfg.repair_fn.is_some()
     );
     let sse = sse_parser::SseStream::new(ds_stream);
@@ -429,12 +432,12 @@ where
     Box::pin(stop_detect)
 }
 
-/// 非流式响应：stream() 的下游收集器，纯重组无特殊逻辑
+/// Response không stream: collector downstream của stream(), chỉ tái tổ hợp, không có logic đặc biệt
 ///
-/// 始终保持为 stream() 的流式收集和重组：
-/// - 所有核心处理（修复、转换、停止序列）都在 stream() 中完成
-/// - 本函数仅将 stream() 的输出事件聚合并重组成单条 ChatCompletionsResponse JSON
-/// - 不要在此函数中添加任何独立于 stream() 的处理逻辑
+/// Luôn giữ kiểu thu thập và tái tổ hợp từ stream():
+/// - Mọi xử lý lõi (sửa, chuyển đổi, stop sequence) đều nằm trong stream()
+/// - Hàm này chỉ gom event output của stream() và tái tổ hợp thành một ChatCompletionsResponse JSON
+/// - Không thêm logic độc lập với stream() vào hàm này
 pub(crate) async fn aggregate<S>(
     ds_stream: S,
     model: String,
@@ -443,7 +446,7 @@ pub(crate) async fn aggregate<S>(
 where
     S: Stream<Item = Result<Bytes, crate::ds_core::CoreError>> + Send + 'static,
 {
-    debug!(target: "adapter", "构建非流式响应: model={}, stop_count={}", model, cfg.stop.len());
+    debug!(target: "adapter", "Dựng phản hồi không streaming: model={}, stop_count={}", model, cfg.stop.len());
     let chunk_stream = stream(
         ds_stream,
         model.clone(),
@@ -509,7 +512,7 @@ where
     let message_content = if content.is_empty() && !has_tool_calls {
         warn!(
             target: "adapter",
-            "聚合响应内容为空: model={}, finish_reason={:?}, has_tool_calls={}, usage={:?}",
+            "Nội dung phản hồi tổng hợp rỗng: model={}, finish_reason={:?}, has_tool_calls={}, usage={:?}",
             model, finish_reason, tool_calls.is_some(), usage
         );
         None
@@ -549,7 +552,7 @@ where
 
     debug!(
         target: "adapter",
-        "非流式响应聚合完成: finish_reason={:?}, has_tool_calls={}, usage={:?}",
+        "Tổng hợp phản hồi không streaming hoàn tất: finish_reason={:?}, has_tool_calls={}, usage={:?}",
         completion.choices[0].finish_reason,
         completion.choices[0].message.tool_calls.is_some(),
         completion.usage
@@ -583,8 +586,8 @@ mod tests {
         )
     }
 
-    /// 将内容拆分为流式 DS SSE 帧序列，模拟字符级输出（每 ~3 字符一片）
-    /// - pieces: 按顺序排列的 (内容, 片段类型) 对，类型变化时自动插入新 fragment 事件
+    /// Cắt nội dung thành chuỗi frame DS SSE dạng stream, mô phỏng output theo ký tự (mỗi ~3 ký tự một mảnh)
+    /// - pieces: các cặp (nội dung, loại fragment) theo thứ tự; tự thêm event fragment mới khi loại đổi
     fn make_ds_stream(
         pieces: &[(&str, &str)],
         usage_tokens: Option<u32>,
@@ -601,18 +604,18 @@ mod tests {
             let type_changed = prev_type != Some(*frag_type);
 
             if is_first {
-                // 首个片段：在 response 创建中声明
+                // Fragment đầu: khai báo khi tạo response
                 frames.push(sse_bytes(&format!(
                     "data: {{\"v\":{{\"response\":{{\"fragments\":[{{\"type\":\"{frag_type}\",\"content\":\"\"}}]}}}}}}\n\n"
                 )));
             } else if type_changed {
-                // 片段类型变化：APPEND 新片段到 fragments 数组
+                // Loại fragment đổi: APPEND fragment mới vào mảng fragments
                 frames.push(sse_bytes(&format!(
                     "data: {{\"p\":\"response/fragments\",\"o\":\"APPEND\",\"v\":[{{\"type\":\"{frag_type}\",\"content\":\"\"}}]}}\n\n"
                 )));
             }
 
-            // 每 3 字符切割一片
+            // Cắt mỗi 3 ký tự một mảnh
             let mut i = 0;
             while i < content.len() {
                 let mut end = (i + 3).min(content.len());
@@ -771,13 +774,13 @@ mod tests {
         println!("===================================\n");
         assert!(chunks.len() >= 2);
         assert_eq!(chunks[0]["choices"][0]["delta"]["role"], "assistant");
-        // 所有 content 合并后应为 "hi"
+        // Tất cả content gộp lại phải là "hi"
         let all_content: String = chunks
             .iter()
             .filter_map(|c| c["choices"][0]["delta"]["content"].as_str())
             .collect();
         assert_eq!(all_content, "hi");
-        // 最终 finish_reason
+        // finish_reason cuối
         assert_eq!(
             chunks.last().unwrap()["choices"][0]["finish_reason"],
             "stop"
@@ -808,7 +811,7 @@ mod tests {
         println!("======================================\n");
         assert!(chunks.len() >= 2);
         assert_eq!(chunks[0]["choices"][0]["delta"]["role"], "assistant");
-        // 所有 content 合并后应为 "x"
+        // Tất cả content gộp lại phải là "x"
         let all_content: String = chunks
             .iter()
             .filter_map(|c| c["choices"][0]["delta"]["content"].as_str())
@@ -819,7 +822,7 @@ mod tests {
             .iter()
             .find(|c| c["usage"]["completion_tokens"].as_i64() == Some(12));
         assert!(usage_chunk.is_some(), "should have usage chunk");
-        // finish_reason 在含 choices 的最后一个 chunk 中
+        // finish_reason nằm trong chunk cuối có choices
         let finish_chunk = chunks.iter().rev().find(|c| {
             c["choices"].as_array().map_or(false, |a| !a.is_empty())
                 && c["choices"][0]["finish_reason"].as_str().is_some()
@@ -872,8 +875,8 @@ mod tests {
 
     #[tokio::test]
     async fn stream_fragmented_tool_calls_with_thinking() {
-        let tool_xml = tool_span(r#"[{"name": "get_weather", "arguments": {"city": "北京"}}]"#);
-        let frames = make_ds_stream(&[("思考中", "THINK"), (&tool_xml, "RESPONSE")], None);
+        let tool_xml = tool_span(r#"[{"name": "get_weather", "arguments": {"city": "Hanoi"}}]"#);
+        let frames = make_ds_stream(&[("dang suy nghi", "THINK"), (&tool_xml, "RESPONSE")], None);
         let bytes_stream = futures::stream::iter(frames);
         let chunks = collect_chunks(to_bytes_stream(super::stream(
             bytes_stream,
@@ -895,13 +898,16 @@ mod tests {
         println!("============================================================\n");
         assert!(chunks.len() >= 3);
         assert_eq!(chunks[0]["choices"][0]["delta"]["role"], "assistant");
-        // reasoning_content 应包含思考内容
+        // reasoning_content phải chứa nội dung suy luận
         let all_reasoning: String = chunks
             .iter()
             .filter_map(|c| c["choices"][0]["delta"]["reasoning_content"].as_str())
             .collect();
-        assert!(all_reasoning.contains("思考中"), "should contain 思考中");
-        // 某个 chunk 应包含 tool_calls
+        assert!(
+            all_reasoning.contains("dang suy nghi"),
+            "should contain dang suy nghi"
+        );
+        // Một chunk phải chứa tool_calls
         let has_tool_calls = chunks
             .iter()
             .any(|c| c["choices"][0]["delta"]["tool_calls"].as_array().is_some());
@@ -915,7 +921,7 @@ mod tests {
             .unwrap();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0]["function"]["name"], "get_weather");
-        assert_eq!(calls[0]["function"]["arguments"], r#"{"city":"北京"}"#);
+        assert_eq!(calls[0]["function"]["arguments"], r#"{"city":"Hanoi"}"#);
         // finish
         assert_eq!(
             chunks.last().unwrap()["choices"][0]["finish_reason"],
@@ -926,11 +932,11 @@ mod tests {
     #[tokio::test]
     async fn stream_with_tool_search_and_open() {
         let fixture = "event: ready\ndata: {}\n\n\
-            data: {\"v\":{\"response\":{\"fragments\":[{\"type\":\"THINK\",\"content\":\"思考\"}]}}}\n\n\
+            data: {\"v\":{\"response\":{\"fragments\":[{\"type\":\"THINK\",\"content\":\"suy nghi\"}]}}}\n\n\
             data: {\"p\":\"response/fragments\",\"o\":\"APPEND\",\"v\":[{\"id\":3,\"type\":\"TOOL_SEARCH\",\"content\":null,\"queries\":[{\"query\":\"q\"}],\"results\":[],\"stage_id\":1}]}\n\n\
             data: {\"p\":\"response/fragments/-2/results\",\"o\":\"SET\",\"v\":[{\"url\":\"https://example.com\",\"title\":\"ex\",\"snippet\":\"snip\"}]}\n\n\
             data: {\"p\":\"response/fragments\",\"o\":\"APPEND\",\"v\":[{\"id\":4,\"type\":\"TOOL_OPEN\",\"status\":\"WIP\",\"result\":{\"url\":\"https://open.com\",\"title\":\"open\",\"snippet\":\"open-snippet\"},\"reference\":{\"id\":3,\"type\":\"TOOL_SEARCH\"},\"stage_id\":1}]}\n\n\
-            data: {\"p\":\"response/fragments\",\"o\":\"APPEND\",\"v\":[{\"type\":\"THINK\",\"content\":\"继续\"}]}\n\n\
+            data: {\"p\":\"response/fragments\",\"o\":\"APPEND\",\"v\":[{\"type\":\"THINK\",\"content\":\"tiep tuc\"}]}\n\n\
             data: {\"p\":\"response/fragments\",\"o\":\"APPEND\",\"v\":[{\"type\":\"RESPONSE\",\"content\":\"\"}]}\n\n\
             data: {\"p\":\"response/fragments/-1/content\",\"o\":\"APPEND\",\"v\":\"hello\"}\n\n\
             data: {\"p\":\"response/status\",\"o\":\"SET\",\"v\":\"FINISHED\"}\n\n";
@@ -955,14 +961,20 @@ mod tests {
         println!("=============================================\n");
         assert!(chunks.len() >= 3);
         assert_eq!(chunks[0]["choices"][0]["delta"]["role"], "assistant");
-        // 所有 reasoning 合并后应包含 "思考" 和 "继续"
+        // Tất cả reasoning gộp lại phải chứa "suy nghi" và "tiep tuc"
         let all_reasoning: String = chunks
             .iter()
             .filter_map(|c| c["choices"][0]["delta"]["reasoning_content"].as_str())
             .collect();
-        assert!(all_reasoning.contains("思考"), "should contain 思考");
-        assert!(all_reasoning.contains("继续"), "should contain 继续");
-        // 所有 content 合并后应为 "hello"
+        assert!(
+            all_reasoning.contains("suy nghi"),
+            "should contain suy nghi"
+        );
+        assert!(
+            all_reasoning.contains("tiep tuc"),
+            "should contain tiep tuc"
+        );
+        // Tất cả content gộp lại phải là "hello"
         let all_content: String = chunks
             .iter()
             .filter_map(|c| c["choices"][0]["delta"]["content"].as_str())
@@ -978,7 +990,10 @@ mod tests {
     #[tokio::test]
     async fn stream_include_obfuscation() {
         let frames = make_ds_stream(
-            &[("这是一段足够长的中文文本用于测试混淆", "RESPONSE")],
+            &[(
+                "day la mot doan van ban tieng Viet du dai de kiem thu obfuscation",
+                "RESPONSE",
+            )],
             None,
         );
         let bytes_stream = futures::stream::iter(frames);
@@ -1005,7 +1020,7 @@ mod tests {
         }
         println!("============================================\n");
         assert!(chunks.len() >= 2);
-        // 所有含 choices 且有 content 的 chunk 都应被动态 padding 到目标长度附近
+        // Mọi chunk có choices và content phải được padding động gần độ dài mục tiêu
         for c in &chunks {
             if c["choices"][0]["delta"]["content"].as_str().is_some()
                 || c["choices"][0]["finish_reason"].as_str().is_some()
@@ -1022,13 +1037,13 @@ mod tests {
                 );
             }
         }
-        // 内容完整
+        // Nội dung đầy đủ
         let all_content: String = chunks
             .iter()
             .filter_map(|c| c["choices"][0]["delta"]["content"].as_str())
             .collect();
         assert!(
-            all_content.contains("足够长的中文文本"),
+            all_content.contains("van ban tieng Viet du dai"),
             "should contain expected text, got {all_content:?}"
         );
         // finish_reason
@@ -1042,7 +1057,10 @@ mod tests {
     async fn aggregate_tool_calls_with_leading_text() {
         let tool_xml = tool_span(r#"[{"name": "get_weather", "arguments": {"city": "beijing"}}]"#);
         let frames = make_ds_stream(
-            &[("好的，我来帮你。", "RESPONSE"), (&tool_xml, "RESPONSE")],
+            &[
+                ("Duoc, toi se ho tro ban.", "RESPONSE"),
+                (&tool_xml, "RESPONSE"),
+            ],
             None,
         );
         let stream = futures::stream::iter(frames);
@@ -1061,7 +1079,7 @@ mod tests {
         .await
         .unwrap();
         let msg = &resp.choices[0].message;
-        assert_eq!(msg.content.as_deref(), Some("好的，我来帮你。"));
+        assert_eq!(msg.content.as_deref(), Some("Duoc, toi se ho tro ban."));
         let calls = msg.tool_calls.as_ref().unwrap();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].function.as_ref().unwrap().name, "get_weather");
@@ -1079,7 +1097,7 @@ mod tests {
         );
         let frames = make_ds_stream(
             &[
-                ("好的，我来帮你用豆包生成图片。", "RESPONSE"),
+                ("Duoc, toi se giup ban tao anh bang Doubao.", "RESPONSE"),
                 (&tool_xml, "RESPONSE"),
             ],
             None,
@@ -1103,19 +1121,19 @@ mod tests {
             println!("chunk[{i}]:\n{}", serde_json::to_string_pretty(c).unwrap());
         }
         println!("====================================================================\n");
-        // 验证核心语义：前导文本 + tool_calls + finish_reason
+        // Kiểm tra ngữ nghĩa lõi: leading text + tool_calls + finish_reason
         assert!(chunks.len() >= 2);
         assert_eq!(chunks[0]["choices"][0]["delta"]["role"], "assistant");
-        // 所有 content 合并后应包含前导文本
+        // Tất cả content gộp lại phải chứa leading text
         let all_content: String = chunks
             .iter()
             .filter_map(|c| c["choices"][0]["delta"]["content"].as_str())
             .collect();
         assert!(
-            all_content.contains("好的，我来帮你用豆包生成图片"),
+            all_content.contains("Duoc, toi se giup ban tao anh bang Doubao"),
             "should contain leading text, got {all_content:?}"
         );
-        // 某个 chunk 应包含 tool_calls
+        // Một chunk phải chứa tool_calls
         let has_tool_calls = chunks
             .iter()
             .any(|c| c["choices"][0]["delta"]["tool_calls"].as_array().is_some());
@@ -1138,7 +1156,7 @@ mod tests {
     async fn stream_tool_calls_with_leading_text_multi_chunk_fragments() {
         let tool_xml = tool_span(r#"[{"name": "f", "arguments": {}}]"#);
         let frames = make_ds_stream(
-            &[("让我来查一下。", "RESPONSE"), (&tool_xml, "RESPONSE")],
+            &[("Toi se kiem tra.", "RESPONSE"), (&tool_xml, "RESPONSE")],
             None,
         );
         let bytes_stream = futures::stream::iter(frames);
@@ -1160,7 +1178,7 @@ mod tests {
             println!("chunk[{i}]:\n{}", serde_json::to_string_pretty(c).unwrap());
         }
         println!("=============================================================\n");
-        // 应该输出: role, leading text, tool_calls, finish
+        // Phải output: role, leading text, tool_calls, finish
         for (i, c) in chunks.iter().enumerate() {
             eprintln!(
                 "chunk[{}] content={:?} tool_calls={:?} finish={:?}",
@@ -1170,7 +1188,7 @@ mod tests {
                 c["choices"][0]["finish_reason"]
             );
         }
-        // 必须有 tool_calls chunk
+        // Phải có chunk tool_calls
         let has_tool_calls = chunks
             .iter()
             .any(|c| c["choices"][0]["delta"]["tool_calls"].as_array().is_some());
@@ -1181,12 +1199,15 @@ mod tests {
 
     #[tokio::test]
     async fn stream_tool_calls_with_thinking_then_leading_text_then_fragmented_json() {
-        // 最完整的生产场景：thinking -> leading text -> 碎片化 tool_calls
+        // Kịch bản production đầy đủ nhất: thinking -> leading text -> tool_calls bị chia mảnh
         let tool_xml = tool_span(r#"[{"name": "get_weather", "arguments": {"city": "beijing"}}]"#);
         let frames = make_ds_stream(
             &[
-                ("用户要查天气，我需要调用工具", "THINK"),
-                ("好的，我来帮你查一下。", "RESPONSE"),
+                (
+                    "Nguoi dung muon xem thoi tiet, toi can goi cong cu",
+                    "THINK",
+                ),
+                ("Duoc, toi se kiem tra giup ban.", "RESPONSE"),
                 (&tool_xml, "RESPONSE"),
             ],
             None,
@@ -1220,7 +1241,7 @@ mod tests {
                 c["choices"][0]["finish_reason"]
             );
         }
-        // 必须有 tool_calls chunk
+        // Phải có chunk tool_calls
         let has_tool_calls = chunks
             .iter()
             .any(|c| c["choices"][0]["delta"]["tool_calls"].as_array().is_some());
@@ -1232,7 +1253,7 @@ mod tests {
     #[tokio::test]
     async fn stream_tool_calls_json_split_right_after_tag() {
         let tool_xml = tool_span(r#"[{"name": "f", "arguments": {}}]"#);
-        let frames = make_ds_stream(&[("好的。", "RESPONSE"), (&tool_xml, "RESPONSE")], None);
+        let frames = make_ds_stream(&[("Duoc.", "RESPONSE"), (&tool_xml, "RESPONSE")], None);
         let bytes_stream = futures::stream::iter(frames);
         let chunks = collect_chunks(to_bytes_stream(super::stream(
             bytes_stream,
@@ -1283,7 +1304,7 @@ mod tests {
             println!("chunk[{i}]:\n{}", serde_json::to_string_pretty(c).unwrap());
         }
         println!("===================================================\n");
-        // 应该有 role chunk + tool_calls chunk + finish chunk
+        // Phải có role chunk + tool_calls chunk + finish chunk
         for (i, c) in chunks.iter().enumerate() {
             eprintln!(
                 "chunk[{}] content={:?} tool_calls={:?} finish={:?}",
@@ -1299,7 +1320,7 @@ mod tests {
             chunks.len()
         );
         assert_eq!(chunks[0]["choices"][0]["delta"]["role"], "assistant");
-        // 找包含 tool_calls 的 chunk
+        // Tìm chunk có tool_calls
         let tc_idx = chunks
             .iter()
             .position(|c| c["choices"][0]["delta"]["tool_calls"].as_array().is_some())
@@ -1311,7 +1332,7 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0]["function"]["name"], "get_weather");
         assert_eq!(calls[0]["function"]["arguments"], r#"{"city":"beijing"}"#);
-        // 最后一个 chunk 的 finish_reason 应该是 tool_calls
+        // finish_reason của chunk cuối phải là tool_calls
         let last = chunks.last().unwrap();
         assert_eq!(
             last["choices"][0]["finish_reason"], "tool_calls",

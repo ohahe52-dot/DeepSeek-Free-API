@@ -1,23 +1,23 @@
 {
-  "name": "标准工具调用",
+  "name": "Goi cong cu chuan",
   "endpoint": "openai",
   "category": "basic",
   "models": ["deepseek-default", "deepseek-expert"],
   "request": {
     "messages": [
-      {"role": "system", "content": "你是一个天气助手，使用 get_weather 工具查询天气。"},
-      {"role": "user", "content": "北京今天天气怎么样？"}
+      {"role": "system", "content": "Ban la tro ly thoi tiet, dung cong cu get_weather de tra thoi tiet."},
+      {"role": "user", "content": "Thoi tiet Ha Noi hom nay the nao?"}
     ],
     "tools": [
       {
         "type": "function",
         "function": {
           "name": "get_weather",
-          "description": "获取指定城市的天气信息",
+          "description": "Lay thong tin thoi tiet cua thanh pho chi dinh",
           "parameters": {
             "type": "object",
             "properties": {
-              "city": {"type": "string", "description": "城市名称"}
+              "city": {"type": "string", "description": "Ten thanh pho"}
             },
             "required": ["city"]
           }

@@ -1,5 +1,5 @@
 {
-  "name": "图片内联上传",
+  "name": "Upload anh inline",
   "endpoint": "openai",
   "category": "basic",
   "models": [
@@ -13,7 +13,7 @@
         "content": [
           {
             "type": "text",
-            "text": "请描述这张图片的内容。"
+            "text": "Hay mo ta noi dung buc anh nay."
           },
           {
             "type": "image_url",

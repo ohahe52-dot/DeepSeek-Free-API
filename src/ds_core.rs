@@ -1,6 +1,6 @@
-//! DeepSeek 核心模块 —— OpenAI API 到 DeepSeek 的适配层
+//! Module lõi DeepSeek - lớp chuyển đổi từ OpenAI API sang DeepSeek
 //!
-//! 对外暴露最小接口：DeepSeekCore, CoreError, ChatRequest
+//! Chỉ xuất ra giao diện tối thiểu: DeepSeekCore, CoreError, ChatRequest
 
 mod accounts;
 mod client;
@@ -16,22 +16,22 @@ use accounts::AccountPool;
 use client::{ClientError, DsClient};
 use pow::{PowError, PowSolver};
 
-/// 内核层错误类型
+/// Kiểu lỗi tầng lõi
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {
-    /// 服务过载：所有账号都在忙或不健康
+    /// Quá tải dịch vụ: mọi tài khoản đều bận hoặc không khỏe
     #[error("no available account")]
     Overloaded,
 
-    /// PoW 计算失败
+    /// Tính PoW thất bại
     #[error("proof of work failed: {0}")]
     ProofOfWorkFailed(#[from] PowError),
 
-    /// 提供商错误：网络、业务错误、Token 失效等
+    /// Lỗi nhà cung cấp: mạng, nghiệp vụ, token hết hiệu lực...
     #[error("provider: {0}")]
     ProviderError(String),
 
-    /// 流处理错误：连接中断等
+    /// Lỗi xử lý stream: mất kết nối...
     #[error("stream error: {0}")]
     Stream(String),
 }
@@ -66,12 +66,12 @@ impl DeepSeekCore {
             .await
             .map_err(|e| match e {
                 accounts::PoolError::AllAccountsFailed => {
-                    CoreError::ProviderError("所有账号初始化失败".to_string())
+                    CoreError::ProviderError("Tất cả tài khoản khởi tạo thất bại".to_string())
                 }
                 accounts::PoolError::Client(e) => CoreError::ProviderError(e.to_string()),
                 accounts::PoolError::Pow(e) => CoreError::ProofOfWorkFailed(e),
                 accounts::PoolError::Validation(msg) => {
-                    CoreError::ProviderError(format!("配置错误: {}", msg))
+                    CoreError::ProviderError(format!("Lỗi cấu hình: {}", msg))
                 }
                 other => CoreError::ProviderError(other.to_string()),
             })?;
@@ -88,9 +88,9 @@ impl DeepSeekCore {
         Ok(Self { completions })
     }
 
-    /// 发起对话请求，返回 SSE 字节流 + 账号标识
+    /// Gửi yêu cầu hội thoại, trả về stream byte SSE + định danh tài khoản
     ///
-    /// 流结束或丢弃时自动释放账号
+    /// Tự nhả tài khoản khi stream kết thúc hoặc bị hủy
     pub async fn v0_chat(
         &self,
         req: ChatRequest,
@@ -103,27 +103,27 @@ impl DeepSeekCore {
         self.completions.account_statuses()
     }
 
-    /// 动态添加账号
+    /// Thêm tài khoản động
     pub async fn add_account(&self, creds: &crate::config::Account) -> Result<String, PoolError> {
         self.completions.add_account(creds).await
     }
 
-    /// 动态移除账号
+    /// Xóa tài khoản động
     pub async fn remove_account(&self, email_or_mobile: &str) -> Result<String, PoolError> {
         self.completions.remove_account(email_or_mobile).await
     }
 
-    /// 标记账号为 Error 状态
+    /// Đánh dấu tài khoản sang trạng thái Error
     pub fn mark_error(&self, email_or_mobile: &str) {
         self.completions.mark_error(email_or_mobile);
     }
 
-    /// 手动重新登录指定账号
+    /// Đăng nhập lại thủ công tài khoản chỉ định
     pub async fn re_login_single(&self, email_or_mobile: &str) -> Result<(), String> {
         self.completions.re_login_single(email_or_mobile).await
     }
 
-    /// 优雅关闭：清理所有账号的 session
+    /// Tắt an toàn: dọn session của mọi tài khoản
     pub async fn shutdown(&self) {
         self.completions.shutdown().await;
     }
