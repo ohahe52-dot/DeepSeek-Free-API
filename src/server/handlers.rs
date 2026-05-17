@@ -23,7 +23,8 @@ use crate::anthropic_compat::{
 };
 use crate::config::Config;
 use crate::openai_adapter::{
-    ChatCompletionsRequest, ChatOutput, OpenAIAdapter, OpenAIAdapterError,
+    ChatCompletionsRequest, ChatCompletionsResponse, ChatCompletionsResponseChunk, ChatOutput,
+    OpenAIAdapter, OpenAIAdapterError,
 };
 
 use super::auth::LoginLimiter;
@@ -55,6 +56,7 @@ struct TokenGuard {
     stats: Arc<Stats>,
     prompt_tokens: u64,
     completion_tokens: Arc<std::sync::atomic::AtomicU64>,
+    completion_fallback_text: Arc<std::sync::Mutex<String>>,
     model: String,
     api_key: Option<String>,
     request_id: String,
@@ -64,9 +66,17 @@ struct TokenGuard {
 
 impl Drop for TokenGuard {
     fn drop(&mut self) {
-        let ct = self
+        let mut ct = self
             .completion_tokens
             .load(std::sync::atomic::Ordering::Relaxed);
+        if ct == 0 {
+            ct = self
+                .completion_fallback_text
+                .lock()
+                .ok()
+                .map(|text| count_text_tokens(&text))
+                .unwrap_or(0);
+        }
         let log = super::stats::RequestLog {
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -128,6 +138,124 @@ fn next_request_id() -> String {
 }
 
 const X_DS_ACCOUNT: &str = "x-ds-account";
+
+fn count_text_tokens(text: &str) -> u64 {
+    if text.is_empty() {
+        return 0;
+    }
+
+    tiktoken_rs::cl100k_base()
+        .ok()
+        .and_then(|bpe| u64::try_from(bpe.encode_with_special_tokens(text).len()).ok())
+        .unwrap_or_else(|| {
+            let chars = text.chars().count();
+            u64::try_from(chars.div_ceil(4).max(1)).unwrap_or(u64::MAX)
+        })
+}
+
+fn append_openai_chunk_text(
+    chunk: &ChatCompletionsResponseChunk,
+    output: &std::sync::Mutex<String>,
+) {
+    let mut text = String::new();
+    for choice in &chunk.choices {
+        if let Some(content) = &choice.delta.content {
+            text.push_str(content);
+        }
+        if let Some(reasoning) = &choice.delta.reasoning_content {
+            text.push_str(reasoning);
+        }
+        if let Some(function_call) = &choice.delta.function_call {
+            text.push_str(&function_call.arguments);
+        }
+        if let Some(tool_calls) = &choice.delta.tool_calls {
+            append_tool_call_text(tool_calls, &mut text);
+        }
+    }
+
+    if !text.is_empty()
+        && let Ok(mut output) = output.lock()
+    {
+        output.push_str(&text);
+    }
+}
+
+fn append_tool_call_text(calls: &[crate::openai_adapter::types::ToolCall], output: &mut String) {
+    for call in calls {
+        if let Some(function) = &call.function {
+            output.push_str(&function.arguments);
+        }
+        if let Some(custom) = &call.custom
+            && let Some(input) = &custom.input
+        {
+            output.push_str(&input.to_string());
+        }
+    }
+}
+
+fn openai_response_fallback_completion_tokens(resp: &ChatCompletionsResponse) -> u64 {
+    let mut text = String::new();
+    for choice in &resp.choices {
+        append_openai_message_text(&choice.message, &mut text);
+    }
+    count_text_tokens(&text)
+}
+
+fn append_openai_message_text(
+    message: &crate::openai_adapter::types::MessageResponse,
+    output: &mut String,
+) {
+    if let Some(content) = &message.content {
+        output.push_str(content);
+    }
+    if let Some(reasoning) = &message.reasoning_content {
+        output.push_str(reasoning);
+    }
+    if let Some(function_call) = &message.function_call {
+        output.push_str(&function_call.arguments);
+    }
+    if let Some(tool_calls) = &message.tool_calls {
+        append_tool_call_text(tool_calls, output);
+    }
+}
+
+fn append_anthropic_chunk_text(
+    chunk: &crate::anthropic_compat::types::MessagesResponseChunk,
+    output: &std::sync::Mutex<String>,
+) {
+    use crate::anthropic_compat::types::{ContentBlockDelta, MessagesResponseChunk};
+
+    let text = match chunk {
+        MessagesResponseChunk::ContentBlockDelta { delta, .. } => match delta {
+            ContentBlockDelta::Text { text } => text.as_str(),
+            ContentBlockDelta::Thinking { thinking } => thinking.as_str(),
+            ContentBlockDelta::InputJson { partial_json } => partial_json.as_str(),
+        },
+        _ => "",
+    };
+
+    if !text.is_empty()
+        && let Ok(mut output) = output.lock()
+    {
+        output.push_str(text);
+    }
+}
+
+fn anthropic_response_fallback_completion_tokens(
+    resp: &crate::anthropic_compat::types::MessagesResponse,
+) -> u64 {
+    use crate::anthropic_compat::types::ResponseContentBlock;
+
+    let mut text = String::new();
+    for block in &resp.content {
+        match block {
+            ResponseContentBlock::Text { text: content } => text.push_str(content),
+            ResponseContentBlock::Thinking { thinking, .. } => text.push_str(thinking),
+            ResponseContentBlock::ToolUse { input, .. } => text.push_str(&input.to_string()),
+        }
+    }
+    count_text_tokens(&text)
+}
 
 /// Che ID tài khoản: email/số điện thoại chỉ giữ 3 ký tự đầu + ***
 fn mask_account_id(id: &str) -> String {
@@ -228,17 +356,23 @@ pub(crate) async fn chat_completions(
             use futures::StreamExt;
             let completion_tokens = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
             let ct_ref = completion_tokens.clone();
+            let completion_fallback_text =
+                std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+            let fallback_ref = completion_fallback_text.clone();
             let elapsed = timer_start.elapsed();
             let latency_ms = elapsed.as_secs() * 1000 + u64::from(elapsed.subsec_millis());
             let sse = stream
                 .inspect(move |chunk| {
-                    if let Ok(c) = chunk
-                        && let Some(u) = &c.usage
-                    {
-                        ct_ref.store(
-                            u64::from(u.completion_tokens),
-                            std::sync::atomic::Ordering::Relaxed,
-                        );
+                    if let Ok(c) = chunk {
+                        if let Some(u) = &c.usage
+                            && u.completion_tokens > 0
+                        {
+                            ct_ref.store(
+                                u64::from(u.completion_tokens),
+                                std::sync::atomic::Ordering::Relaxed,
+                            );
+                        }
+                        append_openai_chunk_text(c, &fallback_ref);
                     }
                 })
                 .map(move |chunk| match chunk {
@@ -256,6 +390,7 @@ pub(crate) async fn chat_completions(
                     stats: state.stats.clone(),
                     prompt_tokens,
                     completion_tokens,
+                    completion_fallback_text,
                     model: model.clone(),
                     api_key: api_key.clone(),
                     request_id: request_id.clone(),
@@ -274,7 +409,8 @@ pub(crate) async fn chat_completions(
                 .usage
                 .as_ref()
                 .map(|u| u64::from(u.completion_tokens))
-                .unwrap_or(0);
+                .filter(|tokens| *tokens > 0)
+                .unwrap_or_else(|| openai_response_fallback_completion_tokens(&json));
             let elapsed = timer_start.elapsed();
             let latency_ms = elapsed.as_secs() * 1000 + u64::from(elapsed.subsec_millis());
             state.record_request(RequestRecord {
@@ -365,13 +501,19 @@ pub(crate) async fn anthropic_messages(
             let stats = state.stats.clone();
             let completion_tokens = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
             let ct_ref = completion_tokens.clone();
+            let completion_fallback_text =
+                std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+            let fallback_ref = completion_fallback_text.clone();
             use futures::StreamExt;
             let sse = stream
                 .inspect(move |chunk| {
-                    if let Ok(c) = chunk
-                        && let Some(ot) = c.output_tokens()
-                    {
-                        ct_ref.fetch_add(u64::from(ot), std::sync::atomic::Ordering::Relaxed);
+                    if let Ok(c) = chunk {
+                        if let Some(ot) = c.output_tokens()
+                            && ot > 0
+                        {
+                            ct_ref.fetch_max(u64::from(ot), std::sync::atomic::Ordering::Relaxed);
+                        }
+                        append_anthropic_chunk_text(c, &fallback_ref);
                     }
                 })
                 .map(|chunk| match chunk {
@@ -389,6 +531,7 @@ pub(crate) async fn anthropic_messages(
                     stats,
                     prompt_tokens,
                     completion_tokens,
+                    completion_fallback_text,
                     model: model.clone(),
                     api_key: api_key.clone(),
                     request_id: request_id.clone(),
@@ -403,7 +546,11 @@ pub(crate) async fn anthropic_messages(
         }
         AnthropicOutput::Json(json) => {
             let pt = u64::from(result.prompt_tokens);
-            let ct = u64::from(json.usage.output_tokens);
+            let ct = if json.usage.output_tokens > 0 {
+                u64::from(json.usage.output_tokens)
+            } else {
+                anthropic_response_fallback_completion_tokens(&json)
+            };
             let elapsed = timer_start.elapsed();
             let latency_ms = elapsed.as_secs() * 1000 + u64::from(elapsed.subsec_millis());
             state.record_request(RequestRecord {
