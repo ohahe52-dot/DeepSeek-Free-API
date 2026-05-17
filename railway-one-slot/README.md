@@ -8,7 +8,7 @@ Deploy one Railway service that runs both processes:
 Railway settings:
 
 - Builder: Dockerfile
-- Dockerfile path from repo root: `Dockerfile.one-slot`
+- Dockerfile path: `Dockerfile`
 - Healthcheck path: `/health`
 
 Required env:
