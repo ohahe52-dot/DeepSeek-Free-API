@@ -797,12 +797,12 @@ mod tests {
     #[test]
     fn get_account_allows_configured_parallel_claims_per_account() {
         let pool = AccountPool::new(2);
-        pool.accounts
-            .insert("user0@example.com".to_string(), idle_account("user0@example.com", 0));
+        pool.accounts.insert(
+            "user0@example.com".to_string(),
+            idle_account("user0@example.com", 0),
+        );
 
-        let guard_a = pool
-            .get_account()
-            .expect("first claim should use account");
+        let guard_a = pool.get_account().expect("first claim should use account");
         let guard_b = pool
             .get_account()
             .expect("second claim should share account when limit is 2");

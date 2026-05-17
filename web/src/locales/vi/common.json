@@ -88,6 +88,7 @@
       "import": "Nhập",
       "file": "File TXT",
       "quickImportResult": "Đã thêm {added}, bỏ qua {skipped}",
+      "list": "Danh sách tài khoản",
       "expand": "Mở rộng tài khoản",
       "collapse": "Thu gọn tài khoản"
     },

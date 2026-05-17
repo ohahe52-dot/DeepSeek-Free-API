@@ -234,6 +234,7 @@ export function DashboardPage() {
               const isError = a.state === 'error';
               const isInvalid = a.state === 'invalid';
               const variant = isBusy ? 'default' : isError ? 'secondary' : isInvalid ? 'destructive' : 'secondary';
+              const load = a.max_concurrent > 1 || a.active_count > 0 ? ` ${a.active_count}/${a.max_concurrent}` : '';
               const className = isBusy
                 ? 'bg-amber-500/15 text-amber-700 border-amber-200'
                 : isError
@@ -244,6 +245,7 @@ export function DashboardPage() {
               return (
                 <Badge key={a.email || a.mobile} variant={variant} className={className}>
                   {a.email || a.mobile}
+                  {load}
                 </Badge>
               );
             })}

@@ -19,6 +19,9 @@ logs/
 **/tmp_*
 **/tmp
 
+# Local archives
+*.rar
+
 # Web (frontend)
 web/node_modules
 web/dist/

@@ -14,6 +14,8 @@ use crate::openai_adapter::response::{self, TagConfig};
 use crate::openai_adapter::types::{ChatCompletionsRequest, Message, MessageContent};
 use crate::openai_adapter::{OpenAIAdapterError, request};
 
+const MAX_CONTEXT_CACHE_ENTRIES: usize = 512;
+
 struct CacheEntry {
     summary: String,
     created_at: Instant,
@@ -112,16 +114,19 @@ impl ContextOptimizer {
         request_id: String,
         tag_config: Arc<TagConfig>,
     ) {
-        if self.in_flight.contains_key(&plan.in_flight_key) {
-            return;
-        }
         if let Some(entry) = self.cache.get(&plan.cache_key)
             && entry.covered_count >= plan.prefix_count
             && entry.covered_hash == plan.prefix_hash
         {
             return;
         }
-        self.in_flight.insert(plan.in_flight_key.clone(), ());
+        if self
+            .in_flight
+            .insert(plan.in_flight_key.clone(), ())
+            .is_some()
+        {
+            return;
+        }
 
         let this = self.clone();
         tokio::spawn(async move {
@@ -153,6 +158,7 @@ impl ContextOptimizer {
                                 covered_hash: prefix_hash,
                             },
                         );
+                        this.prune_cache(cfg.cache_ttl_secs, MAX_CONTEXT_CACHE_ENTRIES);
                         log::debug!(
                             target: "adapter::context",
                             "req={} context summary cached: prefix_chars={}, covered_count={}",
@@ -173,6 +179,34 @@ impl ContextOptimizer {
             }
             this.in_flight.remove(&in_flight_key);
         });
+    }
+
+    fn prune_cache(&self, ttl_secs: u64, max_entries: usize) {
+        let mut expired = Vec::new();
+        let mut entries = Vec::new();
+
+        for entry in self.cache.iter() {
+            let age_secs = entry.created_at.elapsed().as_secs();
+            if age_secs > ttl_secs {
+                expired.push(entry.key().clone());
+            } else {
+                entries.push((entry.key().clone(), age_secs));
+            }
+        }
+
+        for key in expired {
+            self.cache.remove(&key);
+        }
+
+        let len = entries.len();
+        if len <= max_entries {
+            return;
+        }
+
+        entries.sort_by(|a, b| b.1.cmp(&a.1));
+        for (key, _) in entries.into_iter().take(len - max_entries) {
+            self.cache.remove(&key);
+        }
     }
 
     async fn summarize_prefix(

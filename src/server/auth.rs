@@ -53,11 +53,7 @@ pub async fn sign_jwt(store: &StoreManager) -> Option<String> {
     mac.update(signing_input.as_bytes());
     let sig_b64 = base64url_encode(&mac.finalize().into_bytes());
 
-    let token = format!("{}.{}", signing_input, sig_b64);
-
-    // Cập nhật jwt_issued_at (dùng để thu hồi token cũ)
-    store.set_jwt_issued_at(now).await;
-    Some(token)
+    Some(format!("{}.{}", signing_input, sig_b64))
 }
 
 /// Kiểm tra JWT, trả về có hợp lệ không
@@ -192,6 +188,59 @@ fn epoch_secs() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    fn test_config() -> crate::config::Config {
+        crate::config::Config {
+            accounts: Vec::new(),
+            deepseek: crate::config::DeepSeekConfig::default(),
+            context: crate::config::ContextConfig::default(),
+            server: crate::config::ServerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 0,
+                cors_origins: Vec::new(),
+            },
+            proxy: crate::config::ProxyConfig::default(),
+            admin: crate::config::AdminConfig::default(),
+            api_keys: Vec::new(),
+        }
+    }
+
+    fn test_store() -> (StoreManager, std::path::PathBuf) {
+        let base = std::env::temp_dir().join(format!(
+            "ds-free-api-auth-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let config_path = base.join("config.toml");
+        let config = Arc::new(RwLock::new(test_config()));
+        (StoreManager::new(&base, &config_path, config), base)
+    }
+
+    #[tokio::test]
+    async fn multiple_admin_logins_do_not_revoke_existing_tokens() {
+        let (store, base) = test_store();
+        let limiter = LoginLimiter::new();
+
+        let first = setup_admin(&store, &limiter, "secret-1").await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        let second = login_admin(&store, &limiter, "secret-1").await.unwrap();
+
+        assert_ne!(first, second);
+        assert!(verify_jwt(&store, &first).await);
+        assert!(verify_jwt(&store, &second).await);
+
+        let _ = std::fs::remove_dir_all(base);
+    }
 }
 
 // ── Hàm quản lý cấp cao ────────────────────────────────────────────────────

@@ -88,6 +88,7 @@
       "import": "导入",
       "file": "TXT 文件",
       "quickImportResult": "已添加 {added}，跳过 {skipped}",
+      "list": "账号列表",
       "expand": "展开账号",
       "collapse": "收起账号"
     },

@@ -135,6 +135,7 @@ impl StoreManager {
     }
 
     /// Cập nhật jwt_issued_at và lưu bền vững
+    #[allow(dead_code)]
     pub async fn set_jwt_issued_at(&self, iat: u64) {
         let mut guard = self.config.write().await;
         guard.admin.jwt_issued_at = iat;

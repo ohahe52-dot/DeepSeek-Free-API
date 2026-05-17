@@ -126,6 +126,13 @@ impl OpenAIAdapter {
         self.context.apply(&mut req, request_id, tag_config).await;
 
         let norm = request::normalize::apply(&req).map_err(OpenAIAdapterError::BadRequest)?;
+        log::debug!(
+            target: "adapter",
+            "req={} stream_options include_usage={} include_obfuscation={}",
+            request_id,
+            norm.include_usage,
+            norm.include_obfuscation
+        );
         let tool_ctx = request::tools::extract(&req).map_err(OpenAIAdapterError::BadRequest)?;
         let prompt = request::prompt::build(&req, &tool_ctx);
         let registry = self.model_registry.read().await;
@@ -180,7 +187,9 @@ impl OpenAIAdapter {
                 chat_resp.stream,
                 req.model,
                 response::StreamCfg {
-                    include_usage: norm.include_usage,
+                    // Luôn lấy usage nội bộ để server thống kê token chính xác.
+                    // Handler sẽ ẩn usage khỏi response nếu client không yêu cầu.
+                    include_usage: true,
                     include_obfuscation: norm.include_obfuscation,
                     stop: norm.stop,
                     prompt_tokens,

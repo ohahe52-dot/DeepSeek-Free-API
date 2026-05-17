@@ -67,14 +67,6 @@ impl Drop for TokenGuard {
         let ct = self
             .completion_tokens
             .load(std::sync::atomic::Ordering::Relaxed);
-        self.stats.record_tokens_for_model_and_key(
-            &self.model,
-            self.api_key.as_deref(),
-            self.prompt_tokens,
-            ct,
-        );
-        // Append request log asynchronously
-        let stats = self.stats.clone();
         let log = super::stats::RequestLog {
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -98,9 +90,14 @@ impl Drop for TokenGuard {
             latency_ms: self.latency_ms,
             success: self.success,
         };
-        tokio::spawn(async move {
-            stats.append_log(log);
-        });
+        self.stats.record_tokens_for_model_and_key(
+            &self.model,
+            self.api_key.as_deref(),
+            self.prompt_tokens,
+            ct,
+        );
+        self.stats.append_log(log);
+        self.stats.persist_now();
     }
 }
 
@@ -195,10 +192,8 @@ impl AppState {
             latency_ms: rec.latency_ms,
             success: rec.success,
         };
-        let stats = self.stats.clone();
-        tokio::spawn(async move {
-            stats.append_log(log);
-        });
+        self.stats.append_log(log);
+        self.stats.persist_now();
     }
 }
 
@@ -215,6 +210,11 @@ pub(crate) async fn chat_completions(
         .map_err(|e| OpenAIAdapterError::BadRequest(format!("bad request: {}", e)))?;
     log::debug!(target: "http::request", "req={} POST /v1/chat/completions stream={}", request_id, req.stream);
     let model = req.model.clone();
+    let expose_stream_usage = req
+        .stream_options
+        .as_ref()
+        .map(|o| o.include_usage)
+        .unwrap_or(false);
 
     let result = state.adapter.chat_completions(req, &request_id).await;
     match &result {
@@ -241,8 +241,13 @@ pub(crate) async fn chat_completions(
                         );
                     }
                 })
-                .map(|chunk| match chunk {
-                    Ok(c) => crate::openai_adapter::response::sse_serialize(&c),
+                .map(move |chunk| match chunk {
+                    Ok(mut c) => {
+                        if !expose_stream_usage {
+                            c.usage = None;
+                        }
+                        crate::openai_adapter::response::sse_serialize(&c)
+                    }
                     Err(e) => Err(e),
                 });
             let guarded = TokenGuardStream {

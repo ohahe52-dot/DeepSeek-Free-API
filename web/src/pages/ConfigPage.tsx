@@ -117,6 +117,7 @@ export function ConfigPage() {
   const [revealedKeys, setRevealedKeys] = useState<Record<number, boolean>>({});
   const [revealedPasswords, setRevealedPasswords] = useState<Record<number, boolean>>({});
   const [expandedAccounts, setExpandedAccounts] = useState<Record<number, boolean>>({});
+  const [accountsListOpen, setAccountsListOpen] = useState(false);
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [quickAccountsText, setQuickAccountsText] = useState('');
@@ -173,6 +174,7 @@ export function ConfigPage() {
         setRevealedKeys({});
         setRevealedPasswords({});
         setExpandedAccounts({});
+        setAccountsListOpen(false);
         setOldPassword('');
         setNewPassword('');
         const fresh = await apiFetchConfig();
@@ -193,6 +195,7 @@ export function ConfigPage() {
       setRevealedKeys({});
       setRevealedPasswords({});
       setExpandedAccounts({});
+      setAccountsListOpen(false);
       apiFetchConfig()
         .then(setConfig)
         .catch(() => setMessage({ type: 'err', text: t('config.loadFailed') }));
@@ -343,97 +346,112 @@ export function ConfigPage() {
               </label>
             </div>
           </div>
-          {config.accounts.map((a, i) => {
-            const isExpanded = Boolean(expandedAccounts[i]);
-            const login = a.email || [a.area_code, a.mobile].filter(Boolean).join(' ') || '-';
-            const passwordPreview = a.password ? (revealedPasswords[i] ? a.password : '********') : '-';
-
-            return (
-              <div key={i} className="rounded-md border">
-                <div className="flex items-center gap-2 p-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 shrink-0"
-                    onClick={() => setExpandedAccounts((prev) => ({ ...prev, [i]: !prev[i] }))}
-                    title={isExpanded ? t('config.accounts.collapse') : t('config.accounts.expand')}
-                    aria-label={isExpanded ? t('config.accounts.collapse') : t('config.accounts.expand')}
-                  >
-                    {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  </Button>
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 text-left"
-                    onClick={() => setExpandedAccounts((prev) => ({ ...prev, [i]: !prev[i] }))}
-                  >
-                    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="shrink-0 text-sm font-medium">#{i + 1}</span>
-                      <span className="min-w-0 max-w-full truncate text-sm">{login}</span>
-                      <span className="min-w-0 max-w-full truncate font-mono text-xs text-muted-foreground">
-                        {passwordPreview}
-                      </span>
-                    </div>
-                  </button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 shrink-0"
-                    onClick={() => removeAccountAt(i)}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                {isExpanded && (
-                  <div className="grid gap-2 border-t p-3 md:grid-cols-[minmax(0,1fr)_10rem_8rem_minmax(0,1fr)]">
-                    <div className="min-w-0">
-                      <label className="text-xs text-muted-foreground">{t('config.accounts.email')}</label>
-                      <Input value={a.email} onChange={(e) => updateAccountAt(i, { email: e.target.value })} />
-                    </div>
-                    <div className="min-w-0">
-                      <label className="text-xs text-muted-foreground">{t('config.accounts.mobile')}</label>
-                      <Input value={a.mobile} onChange={(e) => updateAccountAt(i, { mobile: e.target.value })} />
-                    </div>
-                    <div className="min-w-0">
-                      <label className="text-xs text-muted-foreground">{t('config.accounts.areaCode')}</label>
-                      <Input value={a.area_code} onChange={(e) => updateAccountAt(i, { area_code: e.target.value })} />
-                    </div>
-                    <div className="min-w-0">
-                      <label className="text-xs text-muted-foreground">{t('config.accounts.password')}</label>
-                      <div className="flex items-center gap-1">
-                        <Input
-                          type={revealedPasswords[i] ? 'text' : 'password'}
-                          value={a.password}
-                          onChange={(e) => updateAccountAt(i, { password: e.target.value })}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="shrink-0"
-                          onClick={() => setRevealedPasswords((prev) => ({ ...prev, [i]: !prev[i] }))}
-                        >
-                          {revealedPasswords[i] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const nextIndex = config.accounts.length;
-              update(['accounts'], [
-                ...config.accounts,
-                { email: '', mobile: '', area_code: '', password: '' },
-              ]);
-              setExpandedAccounts((prev) => ({ ...prev, [nextIndex]: true }));
-            }}
+          <button
+            type="button"
+            className="flex h-10 w-full items-center gap-2 rounded-md border px-3 text-left text-sm font-medium hover:bg-muted"
+            onClick={() => setAccountsListOpen((open) => !open)}
           >
-            <Plus className="h-4 w-4 mr-1" /> {t('config.accounts.add')}
-          </Button>
+            {accountsListOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            <span className="min-w-0 flex-1 truncate">
+              {t('config.accounts.list')} ({config.accounts.length})
+            </span>
+          </button>
+          {accountsListOpen && (
+            <div className="space-y-3">
+              {config.accounts.map((a, i) => {
+                const isExpanded = Boolean(expandedAccounts[i]);
+                const login = a.email || [a.area_code, a.mobile].filter(Boolean).join(' ') || '-';
+                const passwordPreview = a.password ? (revealedPasswords[i] ? a.password : '********') : '-';
+
+                return (
+                  <div key={i} className="rounded-md border">
+                    <div className="flex items-center gap-2 p-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => setExpandedAccounts((prev) => ({ ...prev, [i]: !prev[i] }))}
+                        title={isExpanded ? t('config.accounts.collapse') : t('config.accounts.expand')}
+                        aria-label={isExpanded ? t('config.accounts.collapse') : t('config.accounts.expand')}
+                      >
+                        {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </Button>
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 text-left"
+                        onClick={() => setExpandedAccounts((prev) => ({ ...prev, [i]: !prev[i] }))}
+                      >
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                          <span className="shrink-0 text-sm font-medium">#{i + 1}</span>
+                          <span className="min-w-0 max-w-full truncate text-sm">{login}</span>
+                          <span className="min-w-0 max-w-full truncate font-mono text-xs text-muted-foreground">
+                            {passwordPreview}
+                          </span>
+                        </div>
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => removeAccountAt(i)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {isExpanded && (
+                      <div className="grid gap-2 border-t p-3 md:grid-cols-[minmax(0,1fr)_10rem_8rem_minmax(0,1fr)]">
+                        <div className="min-w-0">
+                          <label className="text-xs text-muted-foreground">{t('config.accounts.email')}</label>
+                          <Input value={a.email} onChange={(e) => updateAccountAt(i, { email: e.target.value })} />
+                        </div>
+                        <div className="min-w-0">
+                          <label className="text-xs text-muted-foreground">{t('config.accounts.mobile')}</label>
+                          <Input value={a.mobile} onChange={(e) => updateAccountAt(i, { mobile: e.target.value })} />
+                        </div>
+                        <div className="min-w-0">
+                          <label className="text-xs text-muted-foreground">{t('config.accounts.areaCode')}</label>
+                          <Input value={a.area_code} onChange={(e) => updateAccountAt(i, { area_code: e.target.value })} />
+                        </div>
+                        <div className="min-w-0">
+                          <label className="text-xs text-muted-foreground">{t('config.accounts.password')}</label>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type={revealedPasswords[i] ? 'text' : 'password'}
+                              value={a.password}
+                              onChange={(e) => updateAccountAt(i, { password: e.target.value })}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="shrink-0"
+                              onClick={() => setRevealedPasswords((prev) => ({ ...prev, [i]: !prev[i] }))}
+                            >
+                              {revealedPasswords[i] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const nextIndex = config.accounts.length;
+                  update(['accounts'], [
+                    ...config.accounts,
+                    { email: '', mobile: '', area_code: '', password: '' },
+                  ]);
+                  setAccountsListOpen(true);
+                  setExpandedAccounts((prev) => ({ ...prev, [nextIndex]: true }));
+                }}
+              >
+                <Plus className="h-4 w-4 mr-1" /> {t('config.accounts.add')}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
