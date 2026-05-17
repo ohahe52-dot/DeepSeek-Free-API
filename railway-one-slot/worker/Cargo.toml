@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 axum = "0.8"
 bytes = "1"
-ds-free-api = { path = "../..", default-features = false }
+ds-free-api = { git = "https://github.com/ohahe52-dot/ds2apimod-vn.git", rev = "532b342df7cf7c46e98b090d2b7b29307f60c8f7", default-features = false }
 env_logger = "0.11"
 futures-util = "0.3"
 log = "0.4"

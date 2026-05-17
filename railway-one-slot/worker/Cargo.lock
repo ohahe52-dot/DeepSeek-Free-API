@@ -850,6 +850,7 @@ dependencies = [
 [[package]]
 name = "ds-free-api"
 version = "0.2.7-pre1"
+source = "git+https://github.com/ohahe52-dot/ds2apimod-vn.git?rev=532b342df7cf7c46e98b090d2b7b29307f60c8f7#532b342df7cf7c46e98b090d2b7b29307f60c8f7"
 dependencies = [
  "anyhow",
  "axum",
