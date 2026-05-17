@@ -15,6 +15,8 @@ trap cleanup INT TERM EXIT
 
 export PORT="$APP_PORT"
 export WORKER_URL="${WORKER_URL:-http://127.0.0.1:${WORKER_PORT}/v1/compress}"
+export WORKER_CHAT_COMPLETIONS_URL="${WORKER_CHAT_COMPLETIONS_URL:-http://127.0.0.1:${WORKER_PORT}/v1/chat/completions}"
+export WORKER_MODELS_URL="${WORKER_MODELS_URL:-http://127.0.0.1:${WORKER_PORT}/v1/models}"
 export WORKER_ADMIN_ACCOUNTS_URL="${WORKER_ADMIN_ACCOUNTS_URL:-http://127.0.0.1:${WORKER_PORT}/api/admin/accounts}"
 
 /app/context-gateway &

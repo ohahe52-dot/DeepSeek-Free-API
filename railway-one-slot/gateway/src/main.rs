@@ -38,6 +38,8 @@ type SseResult = Result<Event, Infallible>;
 struct AppState {
     client: Client,
     worker_url: Arc<str>,
+    worker_chat_completions_url: Arc<str>,
+    worker_models_url: Arc<str>,
     worker_admin_accounts_url: Arc<str>,
     cache: Arc<DashMap<String, CacheEntry>>,
     api_keys: Arc<DashMap<String, ApiKeyEntry>>,
@@ -117,6 +119,10 @@ async fn main() -> Result<(), AppError> {
 
     let worker_url = std::env::var("WORKER_URL")
         .unwrap_or_else(|_| "http://worker.railway.internal:8080/v1/compress".to_string());
+    let worker_chat_completions_url = std::env::var("WORKER_CHAT_COMPLETIONS_URL")
+        .unwrap_or_else(|_| worker_url.replace("/v1/compress", "/v1/chat/completions"));
+    let worker_models_url = std::env::var("WORKER_MODELS_URL")
+        .unwrap_or_else(|_| worker_url.replace("/v1/compress", "/v1/models"));
     let worker_admin_accounts_url = std::env::var("WORKER_ADMIN_ACCOUNTS_URL")
         .unwrap_or_else(|_| worker_url.replace("/v1/compress", "/api/admin/accounts"));
     let admin_token = std::env::var("ADMIN_TOKEN")
@@ -140,6 +146,8 @@ async fn main() -> Result<(), AppError> {
     let state = AppState {
         client,
         worker_url: Arc::from(worker_url),
+        worker_chat_completions_url: Arc::from(worker_chat_completions_url),
+        worker_models_url: Arc::from(worker_models_url),
         worker_admin_accounts_url: Arc::from(worker_admin_accounts_url),
         cache: Arc::new(DashMap::new()),
         api_keys,
@@ -151,6 +159,12 @@ async fn main() -> Result<(), AppError> {
     let app = Router::new()
         .route("/", get(dashboard))
         .route("/health", get(|| async { "ok" }))
+        .route("/models", get(models))
+        .route("/models/{id}", get(model))
+        .route("/v1/models", get(models))
+        .route("/v1/models/{id}", get(model))
+        .route("/chat/completions", post(chat_completions))
+        .route("/v1/chat/completions", post(chat_completions))
         .route("/v1/compress", post(compress))
         .route(
             "/api/admin/accounts",
@@ -196,6 +210,49 @@ async fn shutdown_signal() {
 
 async fn dashboard() -> Html<&'static str> {
     Html(include_str!("../static/dashboard.html"))
+}
+
+async fn models(State(state): State<AppState>) -> Result<Response, AppError> {
+    proxy_get_json(state.worker_models_url.as_ref(), &state).await
+}
+
+async fn model(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Response, AppError> {
+    let url = format!("{}/{}", state.worker_models_url.trim_end_matches('/'), id);
+    proxy_get_json(&url, &state).await
+}
+
+async fn chat_completions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    require_client_api_key(&state, &headers)?;
+
+    let response = state
+        .client
+        .post(state.worker_chat_completions_url.as_ref())
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("worker chat request failed: {e}")))?;
+
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/json")
+        .to_string();
+
+    Ok(Response::builder()
+        .status(status)
+        .header("content-type", content_type)
+        .body(axum::body::Body::from_stream(response.bytes_stream()))
+        .unwrap())
 }
 
 async fn compress(
@@ -310,6 +367,27 @@ async fn stream_from_worker(
     let _ = tx
         .send(Ok(Event::default().event("done").data("[DONE]")))
         .await;
+}
+
+async fn proxy_get_json(url: &str, state: &AppState) -> Result<Response, AppError> {
+    let response = state
+        .client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("worker request failed: {e}")))?;
+
+    let status = response.status();
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| AppError::Internal(format!("worker body failed: {e}")))?;
+
+    Ok(Response::builder()
+        .status(status)
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(bytes))
+        .unwrap())
 }
 
 async fn admin_accounts(

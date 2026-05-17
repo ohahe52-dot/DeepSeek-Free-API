@@ -106,6 +106,12 @@ async fn main() -> Result<(), WorkerError> {
 
     let app = Router::new()
         .route("/health", get(health))
+        .route("/models", get(models))
+        .route("/models/{id}", get(model))
+        .route("/v1/models", get(models))
+        .route("/v1/models/{id}", get(model))
+        .route("/chat/completions", post(chat_completions))
+        .route("/v1/chat/completions", post(chat_completions))
         .route("/v1/compress", post(compress))
         .route(
             "/api/admin/accounts",
@@ -211,6 +217,72 @@ async fn admin_delete_account(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn models(State(state): State<WorkerState>) -> Response {
+    let bytes = serde_json::to_vec(&state.adapter.list_models().await).unwrap();
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(bytes))
+        .unwrap()
+}
+
+async fn model(State(state): State<WorkerState>, Path(id): Path<String>) -> Response {
+    match state.adapter.get_model(&id).await {
+        Some(model) => {
+            let bytes = serde_json::to_vec(&model).unwrap();
+            Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(bytes))
+                .unwrap()
+        }
+        None => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                json!({ "error": format!("model not found: {id}") }).to_string(),
+            ))
+            .unwrap(),
+    }
+}
+
+async fn chat_completions(
+    State(state): State<WorkerState>,
+    Json(req): Json<ChatCompletionsRequest>,
+) -> Result<Response, WorkerError> {
+    let request_id = next_request_id();
+    let stream_requested = req.stream;
+    let result = state
+        .adapter
+        .chat_completions(req, &request_id)
+        .await
+        .map_err(|e| WorkerError::Internal(e.to_string()))?;
+
+    match result.data {
+        ChatOutput::Stream(stream) => {
+            let (tx, rx) = mpsc::channel(256);
+            tokio::spawn(stream_openai_chunks(stream, tx));
+            Ok(Sse::new(ReceiverStream::new(rx))
+                .keep_alive(KeepAlive::default())
+                .into_response())
+        }
+        ChatOutput::Json(json) => {
+            if stream_requested {
+                return Err(WorkerError::Internal(
+                    "stream request returned JSON response".to_string(),
+                ));
+            }
+            let bytes = serde_json::to_vec(&json)
+                .map_err(|e| WorkerError::Internal(format!("serialize response failed: {e}")))?;
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(bytes))
+                .unwrap())
+        }
+    }
+}
+
 async fn compress(State(state): State<WorkerState>, body: Bytes) -> Result<Response, WorkerError> {
     if body.is_empty() {
         return Err(WorkerError::BadRequest("payload is empty".to_string()));
@@ -246,6 +318,37 @@ async fn compress(State(state): State<WorkerState>, body: Bytes) -> Result<Respo
     Ok(Sse::new(ReceiverStream::new(rx))
         .keep_alive(KeepAlive::default())
         .into_response())
+}
+
+async fn stream_openai_chunks(
+    mut stream: ds_free_api::openai_adapter::ChunkStream,
+    tx: mpsc::Sender<SseResult>,
+) {
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(chunk) => {
+                let Ok(data) = serde_json::to_string(&chunk) else {
+                    let _ = tx
+                        .send(Ok(Event::default()
+                            .data(json!({ "error": "serialize stream chunk failed" }).to_string())))
+                        .await;
+                    return;
+                };
+                if tx.send(Ok(Event::default().data(data))).await.is_err() {
+                    return;
+                }
+            }
+            Err(e) => {
+                let _ = tx
+                    .send(Ok(Event::default()
+                        .data(json!({ "error": e.to_string() }).to_string())))
+                    .await;
+                return;
+            }
+        }
+    }
+
+    let _ = tx.send(Ok(Event::default().data("[DONE]"))).await;
 }
 
 async fn stream_text_deltas(
