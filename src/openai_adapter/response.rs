@@ -63,6 +63,7 @@ fn random_padding(len: usize) -> String {
     s[..len].to_string()
 }
 
+#[allow(dead_code)]
 pub(crate) fn sse_serialize(
     chunk: &ChatCompletionsResponseChunk,
 ) -> Result<Bytes, OpenAIAdapterError> {

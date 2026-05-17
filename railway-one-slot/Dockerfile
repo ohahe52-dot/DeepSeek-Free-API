@@ -12,12 +12,13 @@ RUN apt-get update \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-COPY rust-toolchain.toml ./
-COPY gateway ./gateway
-COPY worker ./worker
+COPY rust-toolchain.toml Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY railway-one-slot/gateway ./railway-one-slot/gateway
+COPY railway-one-slot/worker ./railway-one-slot/worker
 
-RUN cargo build --release --manifest-path gateway/Cargo.toml --target-dir /app/target-gateway
-RUN cargo build --release --manifest-path worker/Cargo.toml --target-dir /app/target-worker
+RUN cargo build --release --manifest-path railway-one-slot/gateway/Cargo.toml --target-dir /app/target-gateway
+RUN cargo build --release --manifest-path railway-one-slot/worker/Cargo.toml --target-dir /app/target-worker
 
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
@@ -28,7 +29,7 @@ RUN apt-get update \
 
 COPY --from=build /app/target-gateway/release/context-gateway /app/context-gateway
 COPY --from=build /app/target-worker/release/context-worker /app/context-worker
-COPY docker/start-gateway-worker.sh /app/start-gateway-worker.sh
+COPY railway-one-slot/docker/start-gateway-worker.sh /app/start-gateway-worker.sh
 
 RUN chmod +x /app/start-gateway-worker.sh
 

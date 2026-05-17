@@ -1,6 +1,6 @@
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile.one-slot"
+dockerfilePath = "railway-one-slot/Dockerfile"
 
 [deploy]
 healthcheckPath = "/health"

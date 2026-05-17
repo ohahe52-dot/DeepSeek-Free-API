@@ -8,7 +8,7 @@ Deploy one Railway service that runs both processes:
 Railway settings:
 
 - Builder: Dockerfile
-- Dockerfile path: `Dockerfile`
+- Dockerfile path from repo root: `Dockerfile.one-slot`
 - Healthcheck path: `/health`
 
 Required env:
@@ -16,7 +16,7 @@ Required env:
 ```env
 ADMIN_TOKEN=change-me
 REQUIRE_API_KEY=true
-UPSTREAM_BASE_URL=https://provider.example.com
+UPSTREAM_BASE_URL=https://chat.deepseek.com/api/v0
 ```
 
 Optional env:
@@ -24,6 +24,8 @@ Optional env:
 ```env
 WORKER_PORT=18081
 ACCOUNTS=email|password
+COMPRESSION_MODEL=deepseek-default
+MAX_CONCURRENT_PER_ACCOUNT=1
 ```
 
 After deploy, open the public Railway URL. Add accounts in the Web UI under `Account Import`.

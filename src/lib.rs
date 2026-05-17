@@ -2,6 +2,7 @@ pub mod anthropic_compat;
 pub mod config;
 pub mod ds_core;
 pub mod openai_adapter;
+#[cfg(feature = "server")]
 pub mod server;
 
 pub use anthropic_compat::AnthropicCompat;

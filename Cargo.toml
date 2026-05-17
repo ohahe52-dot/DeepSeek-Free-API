@@ -60,6 +60,10 @@ flat_map_option = "deny"
 tests_outside_test_module = "deny"
 match_bool = "deny"
 
+[features]
+default = ["server"]
+server = []
+
 [dependencies]
 anyhow = "1.0.102"
 axum = "0.8.8"

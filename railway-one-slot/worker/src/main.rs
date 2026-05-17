@@ -1,73 +1,56 @@
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use ds_free_api::config::{
+    Account as AccountConfig, AdminConfig, ContextConfig, DeepSeekConfig, ProxyConfig, ServerConfig,
+};
+use ds_free_api::{ChatCompletionsRequest, ChatOutput, Config, OpenAIAdapter};
 use futures_util::StreamExt;
 use mimalloc::MiMalloc;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore, mpsc};
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
 const MAX_CHUNK_BYTES: usize = 256 * 1024;
-const STATE_IDLE: u8 = 0;
-const STATE_BUSY: u8 = 1;
-const STATE_ERROR: u8 = 2;
+const DEFAULT_MODEL: &str = "deepseek-default";
+const DEFAULT_COMPRESSION_PROMPT: &str = "You are a lossless context compressor. Compress the user text into compact notes. Preserve facts, numbers, names, code, API details, decisions, constraints, and unresolved questions. Remove filler and repetition. Return compressed text only.";
+
+static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 type SseResult = Result<Event, Infallible>;
 
 #[derive(Clone)]
 struct WorkerState {
-    client: Client,
-    upstream_base: Arc<str>,
-    accounts: Arc<RwLock<Vec<Arc<Account>>>>,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum AccountState {
-    Idle,
-    Busy(Instant),
-    Error,
-}
-
-struct Account {
-    label: Arc<str>,
-    token: Arc<str>,
-    state: AtomicU8,
-    busy_since: Mutex<Option<Instant>>,
-    semaphore: Arc<Semaphore>,
-}
-
-struct AccountLease {
-    account: Arc<Account>,
-    _permit: OwnedSemaphorePermit,
-}
-
-#[derive(Serialize)]
-struct ProviderRequest<'a> {
-    text: &'a str,
-    stream: bool,
+    adapter: Arc<OpenAIAdapter>,
+    model: Arc<str>,
+    compression_prompt: Arc<str>,
 }
 
 #[derive(Serialize)]
 struct AccountInfo {
     index: usize,
     label: String,
-    state: &'static str,
+    email: String,
+    mobile: String,
+    state: String,
     busy_for_seconds: Option<u64>,
+    active_count: usize,
+    max_concurrent: usize,
+    last_released_ms: i64,
+    error_count: u8,
 }
 
 #[derive(Deserialize)]
@@ -79,6 +62,7 @@ struct AddAccountsRequest {
 struct AddAccountsResponse {
     added: usize,
     total: usize,
+    errors: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -104,65 +88,20 @@ impl IntoResponse for WorkerError {
     }
 }
 
-impl Account {
-    fn new(label: impl Into<Arc<str>>, token: impl Into<Arc<str>>) -> Self {
-        Self {
-            label: label.into(),
-            token: token.into(),
-            state: AtomicU8::new(STATE_IDLE),
-            busy_since: Mutex::new(None),
-            semaphore: Arc::new(Semaphore::new(1)),
-        }
-    }
-
-    async fn snapshot(&self) -> AccountState {
-        match self.state.load(Ordering::Acquire) {
-            STATE_IDLE => AccountState::Idle,
-            STATE_BUSY => {
-                AccountState::Busy(self.busy_since.lock().await.unwrap_or_else(Instant::now))
-            }
-            _ => AccountState::Error,
-        }
-    }
-
-    async fn mark_busy(&self) {
-        *self.busy_since.lock().await = Some(Instant::now());
-        self.state.store(STATE_BUSY, Ordering::Release);
-    }
-
-    async fn mark_idle(&self) {
-        *self.busy_since.lock().await = None;
-        self.state.store(STATE_IDLE, Ordering::Release);
-    }
-
-    fn mark_error(&self) {
-        self.state.store(STATE_ERROR, Ordering::Release);
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), WorkerError> {
-    let port = std::env::var("PORT")
-        .ok()
-        .and_then(|v| v.parse::<u16>().ok())
-        .unwrap_or(8080);
+    env_logger::init();
 
-    let upstream_base = std::env::var("UPSTREAM_BASE_URL")
-        .unwrap_or_else(|_| "https://provider.example.com".to_string());
-
-    let accounts = load_accounts()?;
-    let client = Client::builder()
-        .http2_adaptive_window(true)
-        .pool_max_idle_per_host(128)
-        .pool_idle_timeout(Duration::from_secs(90))
-        .tcp_keepalive(Duration::from_secs(60))
-        .build()
-        .map_err(|e| WorkerError::Internal(format!("build HTTP client failed: {e}")))?;
+    let port = env_u16("PORT", 8080);
+    let config = config_from_env(port)?;
+    let adapter = OpenAIAdapter::new(&config)
+        .await
+        .map_err(|e| WorkerError::Internal(format!("init DeepSeek adapter failed: {e}")))?;
 
     let state = WorkerState {
-        client,
-        upstream_base: Arc::from(upstream_base),
-        accounts: Arc::new(RwLock::new(accounts)),
+        adapter: Arc::new(adapter),
+        model: Arc::from(env_string("COMPRESSION_MODEL", DEFAULT_MODEL)),
+        compression_prompt: Arc::from(env_string("COMPRESSION_PROMPT", DEFAULT_COMPRESSION_PROMPT)),
     };
 
     let app = Router::new()
@@ -197,51 +136,24 @@ async fn shutdown_signal() {
 }
 
 async fn health(State(state): State<WorkerState>) -> Json<serde_json::Value> {
-    let mut idle = 0usize;
-    let mut busy = 0usize;
-    let mut error = 0usize;
-    let accounts = state.accounts.read().await;
-
-    for account in accounts.iter() {
-        match account.snapshot().await {
-            AccountState::Idle => idle += 1,
-            AccountState::Busy(since) => {
-                let _busy_for = since.elapsed();
-                busy += 1;
-            }
-            AccountState::Error => error += 1,
-        }
-    }
+    let accounts = sorted_accounts(&state);
+    let idle = accounts.iter().filter(|a| a.state == "idle").count();
+    let busy = accounts.iter().filter(|a| a.state == "busy").count();
+    let error = accounts.iter().filter(|a| a.state == "error").count();
+    let invalid = accounts.iter().filter(|a| a.state == "invalid").count();
 
     Json(json!({
         "ok": true,
         "accounts": accounts.len(),
         "idle": idle,
         "busy": busy,
-        "error": error
+        "error": error,
+        "invalid": invalid
     }))
 }
 
 async fn admin_accounts(State(state): State<WorkerState>) -> Json<serde_json::Value> {
-    let account_pool = state.accounts.read().await;
-    let mut accounts = Vec::with_capacity(account_pool.len());
-
-    for (idx, account) in account_pool.iter().enumerate() {
-        let (state_name, busy_for_seconds) = match account.snapshot().await {
-            AccountState::Idle => ("idle", None),
-            AccountState::Busy(since) => ("busy", Some(since.elapsed().as_secs())),
-            AccountState::Error => ("error", None),
-        };
-
-        accounts.push(AccountInfo {
-            index: idx,
-            label: account.label.to_string(),
-            state: state_name,
-            busy_for_seconds,
-        });
-    }
-
-    Json(json!({ "accounts": accounts }))
+    Json(json!({ "accounts": sorted_accounts(&state) }))
 }
 
 async fn admin_add_accounts(
@@ -255,16 +167,21 @@ async fn admin_add_accounts(
         ));
     }
 
-    let mut accounts = state.accounts.write().await;
-    let start = accounts.len();
-    for (offset, credential) in imported.into_iter().enumerate() {
-        let label = account_label(&credential, start + offset);
-        accounts.push(Arc::new(Account::new(label, credential)));
+    let mut added = 0usize;
+    let mut errors = Vec::new();
+    for account in imported {
+        let label = account_label(&account);
+        match state.adapter.add_account(&account).await {
+            Ok(_) => added += 1,
+            Err(e) => errors.push(format!("{label}: {e}")),
+        }
     }
 
+    let total = state.adapter.account_statuses().len();
     Ok(Json(AddAccountsResponse {
-        added: accounts.len() - start,
-        total: accounts.len(),
+        added,
+        total,
+        errors,
     }))
 }
 
@@ -272,209 +189,260 @@ async fn admin_delete_account(
     State(state): State<WorkerState>,
     Path(index): Path<usize>,
 ) -> Result<StatusCode, WorkerError> {
-    let mut accounts = state.accounts.write().await;
-    let Some(account) = accounts.get(index).cloned() else {
+    let accounts = sorted_accounts(&state);
+    let Some(account) = accounts.get(index) else {
         return Err(WorkerError::BadRequest(
             "account index not found".to_string(),
         ));
     };
 
-    if matches!(account.snapshot().await, AccountState::Busy(_)) {
-        return Err(WorkerError::Conflict("account is busy".to_string()));
-    }
+    let id = if account.email.is_empty() {
+        account.mobile.as_str()
+    } else {
+        account.email.as_str()
+    };
 
-    accounts.remove(index);
+    state
+        .adapter
+        .remove_account(id)
+        .await
+        .map_err(|e| WorkerError::Conflict(e.to_string()))?;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn compress(
-    State(state): State<WorkerState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Response, WorkerError> {
+async fn compress(State(state): State<WorkerState>, body: Bytes) -> Result<Response, WorkerError> {
     if body.is_empty() {
         return Err(WorkerError::BadRequest("payload is empty".to_string()));
     }
-    let lease = acquire_account(&state).await?;
+
+    let text = std::str::from_utf8(&body)
+        .map_err(|_| WorkerError::BadRequest("payload must be valid UTF-8 text".to_string()))?;
+    let req = build_compression_request(&state, text)?;
+    let request_id = next_request_id();
+
+    let result = state
+        .adapter
+        .chat_completions(req, &request_id)
+        .await
+        .map_err(|e| {
+            let message = e.to_string();
+            if message.contains("no available account") {
+                WorkerError::Busy
+            } else {
+                WorkerError::Internal(message)
+            }
+        })?;
+
+    let ChatOutput::Stream(stream) = result.data else {
+        return Err(WorkerError::Internal(
+            "compression request did not return a stream".to_string(),
+        ));
+    };
+
     let (tx, rx) = mpsc::channel(256);
-    tokio::spawn(run_provider_stream(state, headers, body, lease, tx));
+    tokio::spawn(stream_text_deltas(stream, tx));
 
     Ok(Sse::new(ReceiverStream::new(rx))
         .keep_alive(KeepAlive::default())
         .into_response())
 }
 
-async fn run_provider_stream(
-    state: WorkerState,
-    headers: HeaderMap,
-    body: Bytes,
-    lease: AccountLease,
+async fn stream_text_deltas(
+    mut stream: ds_free_api::openai_adapter::ChunkStream,
     tx: mpsc::Sender<SseResult>,
 ) {
-    let text = String::from_utf8_lossy(&body);
-    let chunk_index = headers
-        .get("x-chunk-index")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("0");
-
-    let url = format!("{}/conversation", state.upstream_base.trim_end_matches('/'));
-    let response = state
-        .client
-        .post(&url)
-        .bearer_auth(lease.account.token.as_ref())
-        .json(&ProviderRequest {
-            text: &text,
-            stream: true,
-        })
-        .send()
-        .await;
-
-    let mut conversation_id = None;
-    match response {
-        Ok(response) if response.status().is_success() => {
-            conversation_id = response
-                .headers()
-                .get("x-conversation-id")
-                .and_then(|v| v.to_str().ok())
-                .map(str::to_string);
-
-            let mut stream = response.bytes_stream();
-            while let Some(item) = stream.next().await {
-                match item {
-                    Ok(bytes) => {
-                        let data = String::from_utf8_lossy(&bytes).to_string();
-                        if tx
-                            .send(Ok(Event::default()
-                                .event("delta")
-                                .id(chunk_index.to_string())
-                                .data(data)))
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(chunk) => {
+                for choice in chunk.choices {
+                    if let Some(content) = choice.delta.content
+                        && !content.is_empty()
+                        && tx
+                            .send(Ok(Event::default().event("delta").data(content)))
                             .await
                             .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        lease.account.mark_error();
-                        let _ = tx
-                            .send(Ok(Event::default().event("error").data(e.to_string())))
-                            .await;
-                        break;
+                    {
+                        return;
                     }
                 }
             }
-        }
-        Ok(response) => {
-            lease.account.mark_error();
-            let _ = tx
-                .send(Ok(Event::default()
-                    .event("error")
-                    .data(format!("upstream status {}", response.status()))))
-                .await;
-        }
-        Err(e) => {
-            lease.account.mark_error();
-            let _ = tx
-                .send(Ok(Event::default().event("error").data(e.to_string())))
-                .await;
+            Err(e) => {
+                let _ = tx
+                    .send(Ok(Event::default().event("error").data(e.to_string())))
+                    .await;
+                return;
+            }
         }
     }
 
     let _ = tx
         .send(Ok(Event::default().event("done").data("[DONE]")))
         .await;
-    tokio::spawn(cleanup_conversation(
-        state.client,
-        state.upstream_base,
-        conversation_id,
-        lease,
-    ));
 }
 
-async fn cleanup_conversation(
-    client: Client,
-    upstream_base: Arc<str>,
-    conversation_id: Option<String>,
-    lease: AccountLease,
-) {
-    let base = upstream_base.trim_end_matches('/');
-    let url = conversation_id.map_or_else(
-        || format!("{base}/conversation"),
-        |id| format!("{base}/conversation/{id}"),
+fn build_compression_request(
+    state: &WorkerState,
+    text: &str,
+) -> Result<ChatCompletionsRequest, WorkerError> {
+    let value = json!({
+        "model": state.model.as_ref(),
+        "stream": true,
+        "stream_options": { "include_usage": true },
+        "messages": [
+            { "role": "system", "content": state.compression_prompt.as_ref() },
+            { "role": "user", "content": text }
+        ]
+    });
+
+    serde_json::from_value(value)
+        .map_err(|e| WorkerError::Internal(format!("build compression request failed: {e}")))
+}
+
+fn sorted_accounts(state: &WorkerState) -> Vec<AccountInfo> {
+    let mut accounts = state
+        .adapter
+        .account_statuses()
+        .into_iter()
+        .map(|account| {
+            let label = if account.email.is_empty() {
+                account.mobile.clone()
+            } else {
+                account.email.clone()
+            };
+            AccountInfo {
+                index: 0,
+                label,
+                email: account.email,
+                mobile: account.mobile,
+                state: account.state,
+                busy_for_seconds: None,
+                active_count: account.active_count,
+                max_concurrent: account.max_concurrent,
+                last_released_ms: account.last_released_ms,
+                error_count: account.error_count,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    accounts.sort_by(|a, b| a.label.cmp(&b.label));
+    for (index, account) in accounts.iter_mut().enumerate() {
+        account.index = index;
+    }
+    accounts
+}
+
+fn config_from_env(port: u16) -> Result<Config, WorkerError> {
+    let mut deepseek = DeepSeekConfig::default();
+    deepseek.api_base = env_string("UPSTREAM_BASE_URL", &deepseek.api_base);
+    deepseek.wasm_url = env_string("WASM_URL", &deepseek.wasm_url);
+    deepseek.user_agent = env_string("USER_AGENT", &deepseek.user_agent);
+    deepseek.max_concurrent_per_account = env_usize(
+        "MAX_CONCURRENT_PER_ACCOUNT",
+        deepseek.max_concurrent_per_account,
     );
 
-    let _ = client
-        .delete(url)
-        .bearer_auth(lease.account.token.as_ref())
-        .send()
-        .await;
-
-    if matches!(lease.account.snapshot().await, AccountState::Busy(_)) {
-        lease.account.mark_idle().await;
-    }
+    Ok(Config {
+        accounts: load_accounts_from_env(),
+        deepseek,
+        context: ContextConfig::default(),
+        server: ServerConfig {
+            host: "0.0.0.0".to_string(),
+            port,
+            cors_origins: Vec::new(),
+        },
+        proxy: ProxyConfig {
+            url: std::env::var("PROXY_URL")
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty()),
+        },
+        admin: AdminConfig::default(),
+        api_keys: Vec::new(),
+    })
 }
 
-async fn acquire_account(state: &WorkerState) -> Result<AccountLease, WorkerError> {
-    let accounts = state.accounts.read().await;
-    for account in accounts.iter() {
-        if !matches!(account.snapshot().await, AccountState::Idle) {
-            continue;
-        }
-        if let Ok(permit) = account.semaphore.clone().try_acquire_owned() {
-            account.mark_busy().await;
-            return Ok(AccountLease {
-                account: Arc::clone(account),
-                _permit: permit,
-            });
-        }
-    }
-    Err(WorkerError::Busy)
+fn load_accounts_from_env() -> Vec<AccountConfig> {
+    std::env::var("ACCOUNTS")
+        .ok()
+        .map(|raw| parse_account_lines(&raw))
+        .unwrap_or_default()
 }
 
-fn load_accounts() -> Result<Vec<Arc<Account>>, WorkerError> {
-    let raw = std::env::var("ACCOUNTS").unwrap_or_default();
-
-    let accounts: Vec<Arc<Account>> = raw
-        .split([',', '\n'])
-        .map(str::trim)
-        .filter(|token| !token.is_empty())
-        .enumerate()
-        .map(|(idx, token)| {
-            Arc::new(Account::new(
-                account_label(token, idx),
-                Arc::<str>::from(token),
-            ))
-        })
-        .collect();
-
-    Ok(accounts)
-}
-
-fn parse_account_lines(raw: &str) -> Vec<Arc<str>> {
+fn parse_account_lines(raw: &str) -> Vec<AccountConfig> {
     raw.lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(Arc::<str>::from)
+        .filter_map(parse_account_line)
         .collect()
 }
 
-fn account_label(credential: &str, index: usize) -> String {
-    if !credential
-        .chars()
-        .any(|ch| matches!(ch, '|' | ':' | ';' | ',' | '\t'))
-    {
-        return format!("Account {:02}", index + 1);
+fn parse_account_line(line: &str) -> Option<AccountConfig> {
+    let sep = ['|', ':', ';', '\t', ',']
+        .into_iter()
+        .find(|sep| line.contains(*sep))?;
+
+    let parts = line.split(sep).map(str::trim).collect::<Vec<_>>();
+    if parts.len() >= 3 && parts[0].starts_with('+') {
+        let password = parts[2..].join(&sep.to_string());
+        return Some(AccountConfig {
+            email: String::new(),
+            mobile: parts[1].to_string(),
+            area_code: parts[0].to_string(),
+            password,
+        });
     }
 
-    let head = credential
-        .split(|ch| matches!(ch, '|' | ':' | ';' | ',' | '\t'))
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-
-    match head {
-        Some(value) if value.len() <= 64 => value.to_string(),
-        Some(value) => format!("{}...", value.chars().take(61).collect::<String>()),
-        None => format!("Account {:02}", index + 1),
+    if parts.len() >= 2 {
+        let password = parts[1..].join(&sep.to_string());
+        let login = parts[0].to_string();
+        let is_email = login.contains('@');
+        return Some(AccountConfig {
+            email: if is_email {
+                login.clone()
+            } else {
+                String::new()
+            },
+            mobile: if is_email { String::new() } else { login },
+            area_code: String::new(),
+            password,
+        });
     }
+
+    None
+}
+
+fn account_label(account: &AccountConfig) -> String {
+    if account.email.is_empty() {
+        account.mobile.clone()
+    } else {
+        account.email.clone()
+    }
+}
+
+fn env_string(name: &str, default: &str) -> String {
+    std::env::var(name)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| default.to_string())
+}
+
+fn env_u16(name: &str, default: u16) -> u16 {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(default)
+}
+
+fn env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(default)
+}
+
+fn next_request_id() -> String {
+    let id = REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("worker-{id}")
 }
