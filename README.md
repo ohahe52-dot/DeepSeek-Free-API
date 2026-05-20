@@ -344,4 +344,5 @@ Hướng dẫn phát triển chi tiết (build, test, Docker deploy, e2e test, v
 
 Mục đích ban đầu của dự án là trải nghiệm các model mới đang được thử nghiệm trên Web chính thức.
 
+
 **Nghiêm cấm thương mại hóa**, tránh gây áp lực lên server chính thức. Mọi rủi ro tự chịu.
