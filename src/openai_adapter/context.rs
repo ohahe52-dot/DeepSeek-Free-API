@@ -627,9 +627,198 @@ mod tests {
     }
 
     #[test]
+    fn assistant_tool_calls_in_prefix_disable_summary_plan() {
+        let req = request(json!([
+            {
+                "role": "assistant",
+                "content": "calling tool",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "lookup", "arguments": "{}"}
+                    }
+                ]
+            },
+            {"role": "user", "content": "yyyyyyyyyyyyyyyyyyyyyyyyy"},
+            {"role": "user", "content": "recent user"},
+            {"role": "assistant", "content": "recent assistant"}
+        ]));
+
+        assert!(plan_request(&req, &test_config()).is_none());
+    }
+
+    #[test]
+    fn message_level_audio_in_prefix_disables_summary_plan() {
+        let req = request(json!([
+            {
+                "role": "user",
+                "content": "xxxxxxxxxxxxxxxxxxxxxxxxx",
+                "audio": {"id": "audio-1"}
+            },
+            {"role": "assistant", "content": "yyyyyyyyyyyyyyyyyyyyyyyyy"},
+            {"role": "user", "content": "recent user"},
+            {"role": "assistant", "content": "recent assistant"}
+        ]));
+
+        assert!(plan_request(&req, &test_config()).is_none());
+    }
+
+    #[test]
+    fn thread_id_metadata_is_used_for_cache_key() {
+        let mut req = request(json!([
+            {"role": "user", "content": "xxxxxxxxxxxxxxxxxxxxxxxxx"},
+            {"role": "assistant", "content": "yyyyyyyyyyyyyyyyyyyyyyyyy"},
+            {"role": "user", "content": "recent user"},
+            {"role": "assistant", "content": "recent assistant"}
+        ]));
+        req.metadata = Some(json!({"thread_id": "thread-42"}));
+
+        let plan = plan_request(&req, &test_config()).unwrap();
+
+        assert_eq!(plan.cache_key, "metadata:thread-42");
+    }
+
+    #[test]
+    fn text_only_parts_prefix_can_be_summarized() {
+        let req = request(json!([
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "xxxxxxxxxxxx"},
+                    {"type": "text", "text": "yyyyyyyyyyyy"}
+                ]
+            },
+            {"role": "assistant", "content": "zzzzzzzzzzzzzzzzzzzzzzzzz"},
+            {"role": "user", "content": "recent user"},
+            {"role": "assistant", "content": "recent assistant"}
+        ]));
+
+        let plan = plan_request(&req, &test_config()).unwrap();
+
+        assert_eq!(plan.prefix_count, 2);
+    }
+
+    #[test]
+    fn implicit_cache_key_is_used_without_metadata_or_prompt_cache_key() {
+        let mut req = request(json!([
+            {"role": "system", "content": "system rule"},
+            {"role": "user", "content": "xxxxxxxxxxxxxxxxxxxxxxxxx"},
+            {"role": "assistant", "content": "yyyyyyyyyyyyyyyyyyyyyyyyy"},
+            {"role": "user", "content": "recent user"},
+            {"role": "assistant", "content": "recent assistant"}
+        ]));
+        req.metadata = None;
+
+        let plan = plan_request(&req, &test_config()).unwrap();
+
+        assert!(plan.cache_key.starts_with("implicit:"));
+    }
+
+    #[test]
+    fn implicit_cache_key_ignores_recent_tail_but_changes_with_user() {
+        let mut req_a = request(json!([
+            {"role": "system", "content": "system rule"},
+            {"role": "user", "content": "xxxxxxxxxxxxxxxxxxxxxxxxx"},
+            {"role": "assistant", "content": "yyyyyyyyyyyyyyyyyyyyyyyyy"},
+            {"role": "user", "content": "recent user a"},
+            {"role": "assistant", "content": "recent assistant a"}
+        ]));
+        req_a.metadata = None;
+        req_a.user = Some("user-a".to_string());
+
+        let mut req_b = request(json!([
+            {"role": "system", "content": "system rule"},
+            {"role": "user", "content": "xxxxxxxxxxxxxxxxxxxxxxxxx"},
+            {"role": "assistant", "content": "yyyyyyyyyyyyyyyyyyyyyyyyy"},
+            {"role": "user", "content": "recent user b"},
+            {"role": "assistant", "content": "recent assistant b"}
+        ]));
+        req_b.metadata = None;
+        req_b.user = Some("user-a".to_string());
+
+        let mut req_c = request(json!([
+            {"role": "system", "content": "system rule"},
+            {"role": "user", "content": "xxxxxxxxxxxxxxxxxxxxxxxxx"},
+            {"role": "assistant", "content": "yyyyyyyyyyyyyyyyyyyyyyyyy"},
+            {"role": "user", "content": "recent user c"},
+            {"role": "assistant", "content": "recent assistant c"}
+        ]));
+        req_c.metadata = None;
+        req_c.user = Some("user-c".to_string());
+
+        let key_a = plan_request(&req_a, &test_config()).unwrap().cache_key;
+        let key_b = plan_request(&req_b, &test_config()).unwrap().cache_key;
+        let key_c = plan_request(&req_c, &test_config()).unwrap().cache_key;
+
+        assert_eq!(key_a, key_b);
+        assert_ne!(key_a, key_c);
+    }
+
+    #[test]
+    fn prefix_chars_below_prewarm_threshold_skips_plan() {
+        let mut cfg = test_config();
+        cfg.prewarm_chars = 100;
+        let req = request(json!([
+            {"role": "user", "content": "xxxxxxxxxxxxxxxxxxxxxxxxx"},
+            {"role": "assistant", "content": "yyyyyyyyyyyyyyyyyyyyyyyyy"},
+            {"role": "user", "content": "recent user"},
+            {"role": "assistant", "content": "recent assistant"}
+        ]));
+
+        assert!(plan_request(&req, &cfg).is_none());
+    }
+
+    #[test]
+    fn content_to_text_joins_text_parts_in_order() {
+        let content = MessageContent::Parts(vec![
+            crate::openai_adapter::types::ContentPart {
+                ty: "text".to_string(),
+                text: Some("first".to_string()),
+                image_url: None,
+                input_audio: None,
+                file: None,
+                refusal: None,
+            },
+            crate::openai_adapter::types::ContentPart {
+                ty: "text".to_string(),
+                text: Some("second".to_string()),
+                image_url: None,
+                input_audio: None,
+                file: None,
+                refusal: None,
+            },
+        ]);
+
+        assert_eq!(content_to_text(&content), "first\nsecond");
+    }
+
+    #[test]
     fn split_text_chunks_keeps_all_text() {
         let chunks = split_text_chunks("abcdef", 2);
 
         assert_eq!(chunks, vec!["ab", "cd", "ef"]);
+    }
+
+    #[test]
+    fn keep_last_messages_covering_all_non_system_skips_plan() {
+        let mut cfg = test_config();
+        cfg.keep_last_messages = 4;
+        let req = request(json!([
+            {"role": "system", "content": "system rule"},
+            {"role": "user", "content": "xxxxxxxxxxxxxxxxxxxxxxxxx"},
+            {"role": "assistant", "content": "yyyyyyyyyyyyyyyyyyyyyyyyy"},
+            {"role": "user", "content": "recent user"},
+            {"role": "assistant", "content": "recent assistant"}
+        ]));
+
+        assert!(plan_request(&req, &cfg).is_none());
+    }
+
+    #[test]
+    fn truncate_chars_appends_marker_when_trimmed() {
+        let out = truncate_chars("abcdef", 3);
+
+        assert_eq!(out, "abc\n[truncated]");
     }
 }

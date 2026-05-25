@@ -332,10 +332,7 @@ async fn admin_accounts(
         .await
         .map_err(|e| AppError::Internal(format!("worker admin body failed: {e}")))?;
 
-    let builder = Response::builder()
-        .status(status)
-        .header("content-type", "application/json");
-    Ok(builder.body(axum::body::Body::from(bytes)).unwrap())
+    build_json_proxy_response(status, bytes)
 }
 
 async fn admin_add_accounts(
@@ -362,10 +359,7 @@ async fn admin_add_accounts(
         .map_err(|e| AppError::Internal(format!("worker add accounts body failed: {e}")))?;
     let _ = state.notifier.send(());
 
-    let builder = Response::builder()
-        .status(status)
-        .header("content-type", "application/json");
-    Ok(builder.body(axum::body::Body::from(bytes)).unwrap())
+    build_json_proxy_response(status, bytes)
 }
 
 async fn admin_delete_account(
@@ -462,6 +456,14 @@ async fn admin_create_api_key(
         name,
         created_at_unix,
     }))
+}
+
+fn build_json_proxy_response(status: StatusCode, bytes: Bytes) -> Result<Response, AppError> {
+    Response::builder()
+        .status(status)
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(bytes))
+        .map_err(|e| AppError::Internal(format!("build proxied JSON response failed: {e}")))
 }
 
 async fn admin_delete_api_key(

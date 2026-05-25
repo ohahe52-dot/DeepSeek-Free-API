@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 
 use axum::{
     body::Body,
@@ -107,7 +108,7 @@ impl Drop for TokenGuard {
             ct,
         );
         self.stats.append_log(log);
-        self.stats.persist_now();
+        self.stats.persist_if_due();
     }
 }
 
@@ -139,13 +140,16 @@ fn next_request_id() -> String {
 
 const X_DS_ACCOUNT: &str = "x-ds-account";
 
+static TOKEN_COUNTER_BPE: OnceLock<Option<tiktoken_rs::CoreBPE>> = OnceLock::new();
+
 fn count_text_tokens(text: &str) -> u64 {
     if text.is_empty() {
         return 0;
     }
 
-    tiktoken_rs::cl100k_base()
-        .ok()
+    TOKEN_COUNTER_BPE
+        .get_or_init(|| tiktoken_rs::cl100k_base().ok())
+        .as_ref()
         .and_then(|bpe| u64::try_from(bpe.encode_with_special_tokens(text).len()).ok())
         .unwrap_or_else(|| {
             let chars = text.chars().count();
@@ -321,7 +325,7 @@ impl AppState {
             success: rec.success,
         };
         self.stats.append_log(log);
-        self.stats.persist_now();
+        self.stats.persist_if_due();
     }
 }
 
@@ -422,15 +426,16 @@ pub(crate) async fn chat_completions(
                 latency_ms,
                 success: true,
             });
-            let bytes = serde_json::to_vec(&json).unwrap();
+            let bytes = serde_json::to_vec(&json)
+                .map_err(|e| OpenAIAdapterError::Internal(format!("serialize chat response failed: {e}")))?;
             log::debug!(target: "http::response", "req={} 200 JSON response {} bytes", request_id, bytes.len());
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(X_DS_ACCOUNT, &mask_account_id(&result.account_id))
                 .body(Body::from(bytes))
-                .unwrap()
-                .into_response())
+                .map(IntoResponse::into_response)
+                .map_err(|e| OpenAIAdapterError::Internal(format!("build chat response failed: {e}")))?)
         }
     }
 }
@@ -438,14 +443,24 @@ pub(crate) async fn chat_completions(
 /// GET /v1/models
 pub(crate) async fn list_models(State(state): State<AppState>) -> Response {
     log::debug!(target: "http::request", "GET /v1/models");
-    let bytes = serde_json::to_vec(&state.adapter.list_models().await).unwrap();
-    log::debug!(target: "http::response", "200 JSON response {} bytes", bytes.len());
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/json")],
-        Body::from(bytes),
-    )
-        .into_response()
+    match serde_json::to_vec(&state.adapter.list_models().await) {
+        Ok(bytes) => {
+            log::debug!(target: "http::response", "200 JSON response {} bytes", bytes.len());
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/json")],
+                Body::from(bytes),
+            )
+                .into_response()
+        }
+        Err(error) => {
+            log::error!(target: "http::response", "failed to serialize models response: {}", error);
+            ServerError::from(OpenAIAdapterError::Internal(format!(
+                "serialize models response failed: {error}"
+            )))
+            .into_response()
+        }
+    }
 }
 
 /// GET /v1/models/{id}
@@ -458,7 +473,11 @@ pub(crate) async fn get_model(
     state.adapter.get_model(&id).await.map_or_else(
         || Err(ServerError::NotFound(id)),
         |model| {
-            let bytes = serde_json::to_vec(&model).unwrap();
+            let bytes = serde_json::to_vec(&model).map_err(|e| {
+                ServerError::from(OpenAIAdapterError::Internal(format!(
+                    "serialize model response failed: {e}"
+                )))
+            })?;
             log::debug!(target: "http::response", "200 JSON response {} bytes", bytes.len());
             Ok((
                 StatusCode::OK,
@@ -562,15 +581,19 @@ pub(crate) async fn anthropic_messages(
                 latency_ms,
                 success: true,
             });
-            let bytes = serde_json::to_vec(&json).unwrap();
+            let bytes = serde_json::to_vec(&json).map_err(|e| {
+                ServerError::from(AnthropicCompatError::Internal(format!(
+                    "serialize anthropic response failed: {e}"
+                )))
+            })?;
             log::debug!(target: "http::response", "req={} 200 JSON response {} bytes", request_id, bytes.len());
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(X_DS_ACCOUNT, &mask_account_id(&result.account_id))
                 .body(Body::from(bytes))
-                .unwrap()
-                .into_response())
+                .map(IntoResponse::into_response)
+                .map_err(|e| ServerError::from(AnthropicCompatError::Internal(format!("build anthropic response failed: {e}"))))?)
         }
     }
 }
@@ -578,14 +601,24 @@ pub(crate) async fn anthropic_messages(
 /// GET /anthropic/v1/models
 pub(crate) async fn anthropic_list_models(State(state): State<AppState>) -> Response {
     log::debug!(target: "http::request", "GET /anthropic/v1/models");
-    let bytes = serde_json::to_vec(&state.anthropic_compat.list_models().await).unwrap();
-    log::debug!(target: "http::response", "200 JSON response {} bytes", bytes.len());
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/json")],
-        Body::from(bytes),
-    )
-        .into_response()
+    match serde_json::to_vec(&state.anthropic_compat.list_models().await) {
+        Ok(bytes) => {
+            log::debug!(target: "http::response", "200 JSON response {} bytes", bytes.len());
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/json")],
+                Body::from(bytes),
+            )
+                .into_response()
+        }
+        Err(error) => {
+            log::error!(target: "http::response", "failed to serialize anthropic models response: {}", error);
+            ServerError::from(AnthropicCompatError::Internal(format!(
+                "serialize anthropic models response failed: {error}"
+            )))
+            .into_response()
+        }
+    }
 }
 
 /// GET /anthropic/v1/models/{id}
@@ -598,7 +631,11 @@ pub(crate) async fn anthropic_get_model(
     state.anthropic_compat.get_model(&id).await.map_or_else(
         || Err(ServerError::NotFound(id)),
         |model| {
-            let bytes = serde_json::to_vec(&model).unwrap();
+            let bytes = serde_json::to_vec(&model).map_err(|e| {
+                ServerError::from(AnthropicCompatError::Internal(format!(
+                    "serialize anthropic model response failed: {e}"
+                )))
+            })?;
             log::debug!(target: "http::response", "200 JSON response {} bytes", bytes.len());
             Ok((
                 StatusCode::OK,

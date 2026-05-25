@@ -164,4 +164,27 @@ mod tests {
         let events: Vec<_> = stream.map(|r| r.unwrap()).collect().await;
         assert_eq!(events.len(), 2);
     }
+
+    #[tokio::test]
+    async fn multi_line_data_is_joined_with_newlines() {
+        let input = Bytes::from("event: ready\ndata: first\ndata: second\n\n");
+        let stream = SseStream::new(futures::stream::iter(vec![Ok::<_, std::io::Error>(input)]));
+        let events: Vec<_> = stream.map(|r| r.unwrap()).collect().await;
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "first\nsecond");
+    }
+
+    #[tokio::test]
+    async fn incomplete_utf8_is_completed_by_later_chunk() {
+        let parts: Vec<Result<Bytes, std::io::Error>> = vec![
+            Ok(Bytes::from_static(&[0x64, 0x61, 0x74, 0x61, 0x3a, 0x20, 0xe2, 0x82])),
+            Ok(Bytes::from_static(&[0xac, 0x0a, 0x0a])),
+        ];
+        let stream = SseStream::new(futures::stream::iter(parts));
+        let events: Vec<_> = stream.map(|r| r.unwrap()).collect().await;
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "€");
+    }
 }

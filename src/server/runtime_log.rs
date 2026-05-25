@@ -52,7 +52,7 @@ impl std::fmt::Debug for DualLogger {
 }
 
 impl DualLogger {
-    fn new(log_path: &str, max_level: log::LevelFilter) -> Self {
+    fn new(log_path: &str, max_level: log::LevelFilter) -> std::io::Result<Self> {
         if let Some(parent) = std::path::Path::new(log_path).parent() {
             let _ = fs::create_dir_all(parent);
         }
@@ -60,16 +60,15 @@ impl DualLogger {
         let file = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(log_path)
-            .expect("Không mở được tệp nhật ký");
+            .open(log_path)?;
 
-        Self {
+        Ok(Self {
             buffer: Mutex::new(VecDeque::with_capacity(BUFFER_CAPACITY)),
             file: std::sync::Mutex::new(file),
             log_path: log_path.to_string(),
             max_level,
             use_color: std::io::stderr().is_terminal(),
-        }
+        })
     }
 
     fn rotate_if_needed(&self) {
@@ -192,22 +191,23 @@ impl log::Log for DualLogger {
 static GLOBAL_LOGGER: std::sync::OnceLock<Arc<DualLogger>> = std::sync::OnceLock::new();
 
 /// Khởi tạo Logger tùy chỉnh, thay env_logger
-pub fn init(log_path: &str) {
+pub fn init(log_path: &str) -> anyhow::Result<()> {
     let max_level = match std::env::var("RUST_LOG") {
         Ok(ref v) if !v.is_empty() => parse_level(v),
         _ => log::LevelFilter::Info,
     };
 
-    let logger = Arc::new(DualLogger::new(log_path, max_level));
+    let logger = Arc::new(DualLogger::new(log_path, max_level)?);
     GLOBAL_LOGGER
         .set(logger.clone())
-        .expect("Logger đã được khởi tạo");
+        .map_err(|_| anyhow::anyhow!("Logger đã được khởi tạo"))?;
 
     // Arc::into_inner cần reference count của Arc bằng 1, nhưng GLOBAL_LOGGER giữ một bản
     // nên bọc Arc clone bằng Box::new
     let boxed: Box<dyn log::Log> = Box::new(LoggerWrapper { inner: logger });
-    log::set_boxed_logger(boxed).expect("Thiết lập logger thất bại");
+    log::set_boxed_logger(boxed).map_err(|e| anyhow::anyhow!("Thiết lập logger thất bại: {}", e))?;
     log::set_max_level(max_level);
+    Ok(())
 }
 
 /// Bọc Arc<DualLogger> để triển khai Log (vì set_boxed_logger cần Box<dyn Log>)
@@ -248,6 +248,8 @@ fn parse_level(s: &str) -> log::LevelFilter {
 
 /// Truy vấn log runtime (phân trang, đảo từ mới nhất về cũ nhất)
 pub async fn query_logs(offset: usize, limit: usize) -> (usize, Vec<RuntimeLogEntry>) {
-    let logger = GLOBAL_LOGGER.get().expect("Logger chưa được khởi tạo");
-    logger.query_logs(offset, limit).await
+    match GLOBAL_LOGGER.get() {
+        Some(logger) => logger.query_logs(offset, limit).await,
+        None => (0, Vec::new()),
+    }
 }

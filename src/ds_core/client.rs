@@ -260,20 +260,20 @@ impl DsClient {
         client_platform: String,
         client_locale: String,
         proxy_url: Option<&str>,
-    ) -> Self {
+    ) -> Result<Self, ClientError> {
         let mut builder = wreq::Client::builder().emulation(Emulation::Chrome136);
         if let Some(url) = proxy_url.and_then(|u| wreq::Proxy::all(u).ok()) {
             builder = builder.proxy(url);
         }
-        Self {
-            http: builder.build().expect("Dựng HTTP client thất bại"),
+        Ok(Self {
+            http: builder.build()?,
             api_base,
             wasm_url,
             user_agent,
             client_version,
             client_platform,
             client_locale,
-        }
+        })
     }
 
     fn auth_headers(&self, token: &str) -> Result<wreq::header::HeaderMap, ClientError> {

@@ -4,7 +4,7 @@ use axum::{
     body::Body,
     extract::{Query, State},
     http::{StatusCode, header},
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 
@@ -402,20 +402,81 @@ pub(crate) async fn admin_runtime_logs(Query(query): Query<RuntimeLogsQuery>) ->
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 fn json_response<T: Serialize>(data: &T) -> Response {
-    let bytes = serde_json::to_vec(data).unwrap();
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(bytes))
-        .unwrap()
+    match serde_json::to_vec(data) {
+        Ok(bytes) => match Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(bytes))
+        {
+            Ok(response) => response,
+            Err(error) => error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("Tạo phản hồi JSON thất bại: {}", error),
+            ),
+        },
+        Err(error) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("Phân tích JSON thất bại: {}", error),
+        ),
+    }
 }
 
 fn error_response(status: StatusCode, message: &str) -> Response {
     let body = serde_json::json!({"error": message});
-    let bytes = serde_json::to_vec(&body).unwrap();
-    Response::builder()
-        .status(status)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(bytes))
-        .unwrap()
+    match serde_json::to_vec(&body) {
+        Ok(bytes) => Response::builder()
+            .status(status)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(bytes))
+            .unwrap_or_else(|_| simple_error_response(status, message)),
+        Err(_) => simple_error_response(status, message),
+    }
+}
+
+fn simple_error_response(status: StatusCode, message: &str) -> Response {
+    (status, [(header::CONTENT_TYPE, "text/plain; charset=utf-8")], message.to_string())
+        .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::json_response;
+    use axum::{body::to_bytes, http::{StatusCode, header}};
+    use serde::ser::{Error as _, Serialize, Serializer};
+
+    struct BrokenSerialize;
+
+    impl Serialize for BrokenSerialize {
+        fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            Err(S::Error::custom("broken serialize"))
+        }
+    }
+
+    #[tokio::test]
+    async fn json_response_returns_200_for_valid_payload() {
+        let response = json_response(&serde_json::json!({"ok": true}));
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/json")
+        );
+    }
+
+    #[tokio::test]
+    async fn json_response_returns_500_when_serialization_fails() {
+        let response = json_response(&BrokenSerialize);
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(text.contains("broken serialize"));
+    }
 }

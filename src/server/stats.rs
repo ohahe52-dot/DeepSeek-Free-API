@@ -172,7 +172,10 @@ impl Stats {
 
     /// Thêm log request
     pub fn append_log(&self, log: RequestLog) {
-        let mut logs = self.request_logs.lock().unwrap();
+        let Ok(mut logs) = self.request_logs.lock() else {
+            log::warn!(target: "stats", "request_logs lock poisoned while appending log");
+            return;
+        };
         if logs.len() >= LOG_CAPACITY {
             logs.pop_front();
         }
@@ -181,7 +184,10 @@ impl Stats {
 
     /// Lấy log request gần nhất
     pub fn recent_logs(&self, limit: usize) -> Vec<RequestLog> {
-        let logs = self.request_logs.lock().unwrap();
+        let Ok(logs) = self.request_logs.lock() else {
+            log::warn!(target: "stats", "request_logs lock poisoned while reading recent logs");
+            return Vec::new();
+        };
         logs.iter().rev().take(limit).cloned().collect()
     }
 
@@ -229,6 +235,15 @@ impl Stats {
         }
         self.total_latency_ms
             .fetch_add(latency_ms, Ordering::Relaxed);
+        // Success requests persist after token/log details are appended on the response path.
+        // Failures have no later detail-recording callback, so they check persistence here.
+        if !success {
+            self.maybe_persist();
+        }
+    }
+
+    /// Kiểm tra và lưu bền vững nếu đã tới ngưỡng persist.
+    pub fn persist_if_due(&self) {
         self.maybe_persist();
     }
 
@@ -283,20 +298,25 @@ impl Stats {
                 })
                 .collect();
             let logs = {
-                let guard = self.request_logs.lock().unwrap();
-                guard
-                    .iter()
-                    .map(|l| super::store::RequestLogData {
-                        timestamp: l.timestamp,
-                        request_id: l.request_id.clone(),
-                        model: l.model.clone(),
-                        api_key: l.api_key.clone(),
-                        prompt_tokens: l.prompt_tokens,
-                        completion_tokens: l.completion_tokens,
-                        latency_ms: l.latency_ms,
-                        success: l.success,
-                    })
-                    .collect()
+                match self.request_logs.lock() {
+                    Ok(guard) => guard
+                        .iter()
+                        .map(|l| super::store::RequestLogData {
+                            timestamp: l.timestamp,
+                            request_id: l.request_id.clone(),
+                            model: l.model.clone(),
+                            api_key: l.api_key.clone(),
+                            prompt_tokens: l.prompt_tokens,
+                            completion_tokens: l.completion_tokens,
+                            latency_ms: l.latency_ms,
+                            success: l.success,
+                        })
+                        .collect(),
+                    Err(_) => {
+                        log::warn!(target: "stats", "request_logs lock poisoned while persisting stats");
+                        Vec::new()
+                    }
+                }
             };
             let st = super::store::StatsStore {
                 total_requests: self.total_requests.load(Ordering::Relaxed),

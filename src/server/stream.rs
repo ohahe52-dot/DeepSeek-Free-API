@@ -64,6 +64,50 @@ where
             builder = builder.header(&name, &value);
         }
 
-        builder.body(body).unwrap().into_response()
+        match builder.body(body) {
+            Ok(response) => response.into_response(),
+            Err(error) => {
+                log::error!(target: "http::response", "failed to build SSE response: {}", error);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    [(header::CONTENT_TYPE, "application/json")],
+                    Body::from(r#"{"error":{"message":"internal server error","type":"server_error","code":"internal_error"}}"#),
+                )
+                    .into_response()
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SseBody;
+    use axum::{http::StatusCode, response::IntoResponse};
+    use bytes::Bytes;
+    use futures::stream;
+
+    #[test]
+    fn sse_body_returns_500_when_header_name_is_invalid() {
+        let response = SseBody::new(stream::empty::<Result<Bytes, std::io::Error>>())
+            .with_header("bad\nname", "value")
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn sse_body_returns_200_for_valid_headers() {
+        let response = SseBody::new(stream::empty::<Result<Bytes, std::io::Error>>())
+            .with_header("x-test", "ok")
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("x-test")
+                .and_then(|value| value.to_str().ok()),
+            Some("ok")
+        );
     }
 }

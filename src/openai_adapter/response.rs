@@ -146,6 +146,7 @@ enum RepairState {
     Repairing {
         future: Pin<Box<dyn Future<Output = Result<Vec<ToolCall>, OpenAIAdapterError>> + Send>>,
     },
+    EmitFinish,
     RepairFailed(String),
     Done,
 }
@@ -233,7 +234,7 @@ impl Stream for RepairStream {
                             calls.len()
                         );
                         trace!(target: "adapter", ">>> repair: success {} calls", calls.len());
-                        *this.state = RepairState::Done;
+                        *this.state = RepairState::EmitFinish;
                         return Poll::Ready(Some(Ok(converter::make_chunk(
                             this.model,
                             Delta {
@@ -289,6 +290,15 @@ impl Stream for RepairStream {
                 RepairState::RepairFailed(msg) => {
                     let msg = std::mem::take(msg);
                     return Poll::Ready(Some(Err(OpenAIAdapterError::Internal(msg))));
+                }
+
+                RepairState::EmitFinish => {
+                    *this.state = RepairState::Done;
+                    return Poll::Ready(Some(Ok(converter::make_chunk(
+                        this.model,
+                        Delta::default(),
+                        Some(FINISH_TOOL_CALLS),
+                    ))));
                 }
 
                 RepairState::Done => return Poll::Ready(None),
@@ -1340,5 +1350,50 @@ mod tests {
             "finish_reason should be tool_calls, got {:?}",
             last["choices"][0]["finish_reason"]
         );
+    }
+
+    #[tokio::test]
+    async fn stream_repair_emits_tool_calls_then_final_finish_chunk() {
+        let broken = format!("{}{{\"name\":\"f\",\"arguments\":{{}}}}", TOOL_CALL_START);
+        let frames = make_ds_stream(&[("Xin cho doi chut.", "RESPONSE"), (&broken, "RESPONSE")], None);
+        let bytes_stream = futures::stream::iter(frames);
+        let repair_fn: super::RepairFn = Arc::new(|_raw| {
+            Box::pin(async move {
+                Ok(vec![ToolCall {
+                    id: "call_repaired".into(),
+                    ty: "function".into(),
+                    function: Some(FunctionCall {
+                        name: "f".into(),
+                        arguments: "{}".into(),
+                    }),
+                    custom: None,
+                    index: 0,
+                }])
+            })
+        });
+
+        let chunks = collect_chunks(to_bytes_stream(super::stream(
+            bytes_stream,
+            "m".into(),
+            super::StreamCfg {
+                include_usage: false,
+                include_obfuscation: false,
+                stop: vec![],
+                prompt_tokens: 0,
+                repair_fn: Some(repair_fn),
+                tag_config: default_tag_config(),
+            },
+        )))
+        .await;
+
+        let tool_idx = chunks
+            .iter()
+            .position(|c| c["choices"][0]["delta"]["tool_calls"].as_array().is_some())
+            .expect("should emit repaired tool_calls chunk");
+        assert_eq!(chunks[tool_idx]["choices"][0]["finish_reason"], "tool_calls");
+
+        let last = chunks.last().unwrap();
+        assert_eq!(last["choices"][0]["finish_reason"], "tool_calls");
+        assert!(last["choices"][0]["delta"]["tool_calls"].is_null());
     }
 }

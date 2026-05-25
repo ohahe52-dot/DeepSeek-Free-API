@@ -1001,7 +1001,7 @@ impl Completions {
             config.deepseek.client_platform.clone(),
             config.deepseek.client_locale.clone(),
             config.proxy.url.as_deref(),
-        );
+        )?;
         let wasm_bytes = client.get_wasm().await?;
         let solver = PowSolver::new(&wasm_bytes)?;
 

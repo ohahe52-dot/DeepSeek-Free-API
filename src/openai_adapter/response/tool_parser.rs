@@ -779,7 +779,15 @@ where
                             buf,
                         ))));
                     }
-                    ToolParseState::Done => return Poll::Ready(None),
+                    ToolParseState::Done => {
+                        if !*this.finish_emitted {
+                            *this.finish_emitted = true;
+                            let chunk =
+                                make_end_chunk(this.model, Delta::default(), "tool_calls");
+                            return Poll::Ready(Some(Ok(chunk)));
+                        }
+                        return Poll::Ready(None);
+                    }
                 },
                 Poll::Pending => break,
             }
@@ -1041,6 +1049,36 @@ mod tests {
         let xml = tool(r#"{"name": "read_file", "arguments": {"path": "C:\Users\name"}}"#);
         let (calls, _) = parse_tool_calls(&xml).unwrap();
         assert_eq!(calls.len(), 1);
+    }
+
+    #[test]
+    fn parse_invoke_style_tool_calls() {
+        let xml = format!(
+            "{TOOL_CALL_START}<invoke name=\"search\"><parameter name=\"query\">\"rust\"</parameter><parameter name=\"limit\">3</parameter></invoke>{TOOL_CALL_END}"
+        );
+        let (calls, remaining) = parse_tool_calls(&xml).unwrap();
+
+        assert!(remaining.is_empty());
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].function.as_ref().unwrap().name, "search");
+        assert_eq!(
+            calls[0].function.as_ref().unwrap().arguments,
+            r#"{"limit":3,"query":"rust"}"#
+        );
+    }
+
+    #[tokio::test]
+    async fn done_state_emits_finish_chunk_at_eof() {
+        let chunk = content_chunk(tool(r#"[{"name":"f","arguments":{}}]"#));
+        let source = futures::stream::iter(vec![Ok(chunk)]);
+        let stream = ToolCallStream::new(source, "m".to_string(), default_tag_config());
+        futures::pin_mut!(stream);
+
+        let first = stream.next().await.unwrap().unwrap();
+        assert!(first.choices[0].delta.tool_calls.is_some());
+
+        let second = stream.next().await.unwrap().unwrap();
+        assert_eq!(second.choices[0].finish_reason.as_deref(), Some("tool_calls"));
     }
 
     #[test]
